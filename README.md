@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Custom Tournament Maker
 
-## Getting Started
+Create a tournament, add teams and groups, define stages, and enter matches.
 
-First, run the development server:
+## Run
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). `/` goes to the dashboard. Sign in is required to manage a tournament.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Supabase
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.local.example` to `.env.local`.
 
-## Learn More
+- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are the project API settings. They are used for sign-in only.
+- `DATABASE_URL` is the transaction-pooler Postgres URI (port 6543). The app schema is not exposed through the anon key.
 
-To learn more about Next.js, take a look at the following resources:
+Apply the schema:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run db:migrate
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The script records applied files in `app.schema_migrations` and skips ones that already ran.
 
-## Deploy on Vercel
+## Authentication
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Sign up and sign in use Supabase Auth. A database trigger, `app.handle_new_user`, inserts `app.profiles`. Creating a tournament also inserts a profile if that row is missing.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Workflow
+
+1. Create a tournament. It gets a public ID such as `TMT-XXXX-XXXX`.
+2. Add teams.
+3. Create groups and assign teams. Group sizes do not have to match.
+4. Add stages (`group`, `league`, or `knockout`) and attach existing groups to a group or league stage.
+5. Add stage participants.
+6. Create matches by hand, then enter a score, cancel, restore, or delete a match that has no completed result.
+
+Anyone with the ID can open a public or unlisted tournament at `/lookup`.
+
+## Implemented
+
+Tournaments, teams, groups, stages, stage participants, matches, and standings. Standings are calculated from completed results. Audit rows are written for tournament changes.
+
+## Not implemented
+
+Qualification, stage progression, bracket generation, automatic fixtures, invitations, and membership.

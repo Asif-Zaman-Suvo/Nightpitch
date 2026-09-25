@@ -1,11 +1,6 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
-import { SiteHeader } from "@/src/components/layout/SiteHeader"
-import { SiteFooter } from "@/src/components/layout/SiteFooter"
-import { PageWrapper } from "@/src/components/layout/PageWrapper"
-import { AppProviders } from "@/src/components/providers/AppProviders"
-import { AuthProvider } from "@/src/contexts/AuthContext"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,27 +13,27 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "FIFA World Cup 2026 Predictor",
-  description: "Predict match scores and build your perfect World Cup 2026 bracket.",
+  title: "Custom Tournament Maker",
+  description: "Create a tournament, add teams, groups, stages, and matches.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "World Cup Predictor",
+    title: "Tournament Maker",
   },
   formatDetection: {
     telephone: false,
   },
   openGraph: {
     type: "website",
-    siteName: "World Cup Predictor",
-    title: "FIFA World Cup 2026 Predictor",
-    description: "Predict match scores and build your perfect World Cup 2026 bracket.",
+    siteName: "Custom Tournament Maker",
+    title: "Custom Tournament Maker",
+    description: "Create a tournament, add teams, groups, stages, and matches.",
   },
   twitter: {
     card: "summary",
-    title: "FIFA World Cup 2026 Predictor",
-    description: "Predict match scores and build your perfect World Cup 2026 bracket.",
+    title: "Custom Tournament Maker",
+    description: "Create a tournament, add teams, groups, stages, and matches.",
   },
   icons: {
     icon: [
@@ -56,7 +51,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0a1628",
+  themeColor: "#050816",
 }
 
 export default function RootLayout({
@@ -72,10 +67,15 @@ export default function RootLayout({
       <head>
         {/* PWA Meta Tags */}
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="application-name" content="World Cup Predictor" />
+        <meta name="application-name" content="Tournament Maker" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="World Cup Predictor" />
+        <meta name="apple-mobile-web-app-title" content="Tournament Maker" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})})}",
+          }}
+        />
         <link rel="apple-touch-icon" href="/icons/icon-152x152.svg" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.svg" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.svg" />
@@ -88,17 +88,7 @@ export default function RootLayout({
         The body stretches full height and stacks header → main → footer.
       */}
       <body className="flex min-h-full flex-col overflow-x-hidden bg-pitch text-foreground">
-        <AuthProvider>
-          <SiteHeader />
-
-          <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-6">
-            <AppProviders>
-              <PageWrapper>{children}</PageWrapper>
-            </AppProviders>
-          </main>
-
-          <SiteFooter />
-        </AuthProvider>
+        {children}
       </body>
     </html>
   )

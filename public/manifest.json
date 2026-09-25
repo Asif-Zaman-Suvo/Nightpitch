@@ -1,7 +1,7 @@
 {
-  "name": "FIFA World Cup 2026 Predictor",
-  "short_name": "World Cup Predictor",
-  "description": "Predict match scores and build your perfect World Cup 2026 bracket.",
+  "name": "Custom Tournament Maker",
+  "short_name": "Tournament Maker",
+  "description": "Create a tournament, add teams, groups, stages, and matches.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a1628",
@@ -62,24 +62,17 @@
   "screenshots": [],
   "shortcuts": [
     {
-      "name": "View Fixtures",
-      "short_name": "Fixtures",
-      "description": "View upcoming World Cup fixtures",
-      "url": "/fixtures",
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Create and manage your tournaments",
+      "url": "/dashboard",
       "icons": [{ "src": "/icons/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
     },
     {
-      "name": "My Bracket",
-      "short_name": "Bracket",
-      "description": "View your prediction bracket",
-      "url": "/bracket",
-      "icons": [{ "src": "/icons/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
-    },
-    {
-      "name": "Leaderboard",
-      "short_name": "Scores",
-      "description": "View the leaderboard",
-      "url": "/leaderboard",
+      "name": "Find a tournament",
+      "short_name": "Lookup",
+      "description": "Open a tournament by its ID",
+      "url": "/lookup",
       "icons": [{ "src": "/icons/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
     }
   ]

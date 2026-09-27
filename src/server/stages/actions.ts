@@ -1,8 +1,9 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { COMPLETED_TOURNAMENT_ERROR, completedMutationError } from "@/src/domain/tournament/champion"
-import { defaultStageRules, parseScoringRules, resolveStandingsRules } from "@/src/domain/tournament/standings"
+import { parseStandingsConfiguration } from "@/src/domain/tournament/standings"
 import {
   acceptsGroups,
   canManageStages,
@@ -145,23 +146,28 @@ export async function updateStageRulesAction(_state: StageFormState, formData: F
   const stage = await findStage(allowed.tournament.id, stageId)
   if (!stage) return { error: "Stage not found." }
   if (!acceptsGroups(stage.stageType)) return { error: "A knockout stage does not use standings rules." }
-  const scoring = parseScoringRules({
-    win: formData.get("win"),
-    draw: formData.get("draw"),
-    loss: formData.get("loss"),
-  })
-  if (!scoring.ok) return { error: scoring.error }
-  const current = resolveStandingsRules(stage.stageType, stage.rules)
-  const rules = {
-    ...defaultStageRules(stage.stageType),
-    standings: { enabled: current.enabled, scoring: scoring.value },
+  // Form fields are strings; convert only at the transport boundary. Domain JSON stays strict.
+  const point = (name: string) => {
+    const value = formData.get(name)
+    return typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value) : NaN
   }
-  await updateStageRules({
-    tournamentId: allowed.tournament.id,
-    stageId,
-    actorId: user.id,
-    rules,
+  const parsed = parseStandingsConfiguration({
+    winPoints: point("win"), drawPoints: point("draw"), lossPoints: point("loss"),
+    tieBreakers: formData.getAll("tieBreakers"),
   })
+  if (!parsed.ok) return { error: parsed.error }
+  try {
+    await updateStageRules({
+      tournamentId: allowed.tournament.id, stageId, actorId: user.id,
+      rules: { schemaVersion: "1", standings: parsed.value },
+    })
+  } catch (error) {
+    if (error instanceof StageConstraintError) return { error: error.message }
+    throw error
+  }
+  revalidatePath(stagesPath(publicId))
+  revalidatePath(`/t/${publicId}/manage/standings`)
+  revalidatePath(`/t/${publicId}`)
   redirect(stagesPath(publicId))
 }
 

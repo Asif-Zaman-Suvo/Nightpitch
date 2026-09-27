@@ -99,13 +99,16 @@ export default async function ManageStagesPage({
                 {rules.enabled ? ` · Win ${rules.scoring.win} · Draw ${rules.scoring.draw} · Loss ${rules.scoring.loss}` : " · No standings table"}
               </p>
               <EditStageForm publicId={publicId} stageId={stage.id} name={stage.name} stageType={stage.stageType} />
-              {rules.enabled ? (
+              {acceptsGroups(stage.stageType) ? (
                 <ScoringRulesForm
                   publicId={publicId}
                   stageId={stage.id}
                   win={rules.scoring.win}
                   draw={rules.scoring.draw}
                   loss={rules.scoring.loss}
+                  tieBreakers={rules.tieBreakers}
+                  locked={tournament.status === "completed"}
+                  key={JSON.stringify(rules)}
                 />
               ) : (
                 <p className="text-sm text-text-muted">This stage does not use a standings table.</p>

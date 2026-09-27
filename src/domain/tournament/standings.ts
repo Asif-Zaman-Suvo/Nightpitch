@@ -7,70 +7,103 @@ export interface ScoringRules {
   loss: number
 }
 
+export const TIE_BREAKERS = ["points", "goalDifference", "goalsScored", "teamName"] as const
+export type TieBreaker = (typeof TIE_BREAKERS)[number]
+export const TIE_BREAKER_LABELS: Record<TieBreaker, string> = {
+  points: "Points", goalDifference: "Goal Difference", goalsScored: "Goals Scored", teamName: "Team Name",
+}
+
 export interface StandingsRules {
   enabled: boolean
   scoring: ScoringRules
+  tieBreakers: TieBreaker[]
+}
+
+export interface StandingsConfiguration {
+  winPoints: number
+  drawPoints: number
+  lossPoints: number
+  tieBreakers: TieBreaker[]
 }
 
 export interface StageRules {
   schemaVersion: "1"
-  standings: StandingsRules
+  standings: StandingsConfiguration
 }
 
 const DEFAULT_SCORING: ScoringRules = { win: 3, draw: 1, loss: 0 }
 
-export function defaultStageRules(stageType: StageType): StageRules {
+type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+export function defaultStageRules(stageType: StageType) {
+  if (stageType === "knockout") {
+    // Preserve the existing knockout JSON; these stages never calculate standings.
+    return { schemaVersion: "1" as const, standings: { enabled: false, scoring: { ...DEFAULT_SCORING } } }
+  }
   return {
-    schemaVersion: "1",
-    standings: {
-      enabled: stageType !== "knockout",
-      scoring: { ...DEFAULT_SCORING },
-    },
+    schemaVersion: "1" as const,
+    standings: { winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...TIE_BREAKERS] },
   }
 }
 
-export function resolveStandingsRules(stageType: StageType, rules: unknown): StandingsRules {
-  const fallback = defaultStageRules(stageType).standings
-  if (!rules || typeof rules !== "object") return fallback
-  const standings = (rules as { standings?: unknown }).standings
-  if (!standings || typeof standings !== "object") return fallback
-  const scoring = (standings as { scoring?: unknown }).scoring
-  const enabled = (standings as { enabled?: unknown }).enabled
-  return {
-    enabled: typeof enabled === "boolean" ? enabled : fallback.enabled,
-    scoring: readScoring(scoring) ?? fallback.scoring,
-  }
-}
-
-export function parseScoringRules(input: {
-  win: unknown
-  draw: unknown
-  loss: unknown
-}): { ok: true; value: ScoringRules } | { ok: false; error: string } {
-  const win = readPoint(input.win)
-  const draw = readPoint(input.draw)
-  const loss = readPoint(input.loss)
-  if (win === null || draw === null || loss === null) {
+export function parseScoringRules(input: { win: unknown; draw: unknown; loss: unknown }): ParseResult<ScoringRules> {
+  if (![input.win, input.draw, input.loss].every(isPoints)) {
     return { ok: false, error: "Scoring values must be whole numbers of zero or more." }
   }
-  return { ok: true, value: { win, draw, loss } }
-}
-
-function readPoint(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN
-  if (!Number.isInteger(parsed) || parsed < 0) return null
-  return parsed
-}
-
-function readScoring(value: unknown): ScoringRules | null {
-  if (!value || typeof value !== "object") return null
-  const scoring = value as { win?: unknown; draw?: unknown; loss?: unknown }
-  if (!isPoints(scoring.win) || !isPoints(scoring.draw) || !isPoints(scoring.loss)) return null
-  return { win: scoring.win, draw: scoring.draw, loss: scoring.loss }
+  return { ok: true, value: { win: input.win as number, draw: input.draw as number, loss: input.loss as number } }
 }
 
 function isPoints(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+}
+
+export function parseTieBreakers(value: unknown): ParseResult<TieBreaker[]> {
+  if (!Array.isArray(value) || value.length === 0 ||
+      value.some((item) => !TIE_BREAKERS.includes(item)) ||
+      new Set(value).size !== value.length || !value.includes("points")) {
+    return { ok: false, error: "Choose unique supported tie-breakers, including Points exactly once." }
+  }
+  return { ok: true, value: [...value] }
+}
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : null
+}
+
+export function parseStandingsConfiguration(value: unknown): ParseResult<StandingsConfiguration> {
+  const input = object(value)
+  if (!input) return { ok: false, error: "Invalid standings rules." }
+  const scoring = parseScoringRules({ win: input.winPoints, draw: input.drawPoints, loss: input.lossPoints })
+  if (!scoring.ok) return scoring
+  const tieBreakers = parseTieBreakers(input.tieBreakers)
+  if (!tieBreakers.ok) return tieBreakers
+  return { ok: true, value: {
+    winPoints: scoring.value.win, drawPoints: scoring.value.draw, lossPoints: scoring.value.loss,
+    tieBreakers: tieBreakers.value,
+  } }
+}
+
+export function resolveStandingsRules(stageType: StageType, rules: unknown): StandingsRules {
+  const stored = object(object(rules)?.standings)
+  const legacyScoring = object(stored?.scoring)
+  const scoring = parseScoringRules(stored && "winPoints" in stored
+    ? { win: stored.winPoints, draw: stored.drawPoints, loss: stored.lossPoints }
+    : { win: legacyScoring?.win, draw: legacyScoring?.draw, loss: legacyScoring?.loss })
+  const tieBreakers = parseTieBreakers(stored?.tieBreakers)
+  return {
+    enabled: stageType !== "knockout" && stored?.enabled !== false,
+    scoring: scoring.ok ? scoring.value : { ...DEFAULT_SCORING },
+    tieBreakers: tieBreakers.ok ? tieBreakers.value : [...TIE_BREAKERS],
+  }
+}
+
+export function sameStandingsRules(left: StandingsRules, right: StandingsRules): boolean {
+  return left.enabled === right.enabled &&
+    left.scoring.win === right.scoring.win && left.scoring.draw === right.scoring.draw &&
+    left.scoring.loss === right.scoring.loss &&
+    left.tieBreakers.length === right.tieBreakers.length &&
+    left.tieBreakers.every((rule, index) => rule === right.tieBreakers[index])
 }
 
 export interface StandingRow {
@@ -139,7 +172,7 @@ export function calculateStandings(input: StandingsInput): StageStandings {
       const result = resultFor(match, null)
       if (result) applyResult(rows, result, input.stage.standings.scoring)
     }
-    return { kind: "league", rows: sortRows(rows) }
+    return { kind: "league", rows: sortRows(rows, input.stage.standings.tieBreakers) }
   }
 
   return {
@@ -152,7 +185,7 @@ export function calculateStandings(input: StandingsInput): StageStandings {
           const result = resultFor(match, group.id)
           if (result) applyResult(rows, result, input.stage.standings.scoring)
         }
-        return { groupId: group.id, groupName: group.name, rows: sortRows(rows) }
+        return { groupId: group.id, groupName: group.name, rows: sortRows(rows, input.stage.standings.tieBreakers) }
       }),
   }
 }
@@ -215,13 +248,24 @@ function record(row: StandingRow, scored: number, conceded: number, scoring: Sco
   }
 }
 
-function sortRows(rows: Map<string, StandingRow>): StandingRow[] {
-  return [...rows.values()].sort(
-    (a, b) =>
-      b.points - a.points ||
-      b.difference - a.difference ||
-      b.scored - a.scored ||
-      a.name.localeCompare(b.name) ||
-      a.teamId.localeCompare(b.teamId),
-  )
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+function compareNames(a: StandingRow, b: StandingRow): number {
+  return compareText(a.name.toLowerCase(), b.name.toLowerCase())
+}
+
+function sortRows(rows: Map<string, StandingRow>, tieBreakers: readonly TieBreaker[]): StandingRow[] {
+  return [...rows.values()].sort((a, b) => {
+    for (const rule of tieBreakers) {
+      const difference = rule === "points" ? b.points - a.points
+        : rule === "goalDifference" ? b.difference - a.difference
+        : rule === "goalsScored" ? b.scored - a.scored
+        : compareNames(a, b)
+      if (difference) return difference
+    }
+    // Names differing only in case remain tied; stable team IDs resolve that tie.
+    return compareNames(a, b) || compareText(a.teamId, b.teamId)
+  })
 }

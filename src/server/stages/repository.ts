@@ -1,6 +1,8 @@
 import "server-only"
 import type { TransactionSql } from "postgres"
-import { defaultStageRules } from "@/src/domain/tournament/standings"
+import { completedMutationError } from "@/src/domain/tournament/champion"
+import type { TournamentStatus } from "@/src/domain/tournament/access"
+import { defaultStageRules, parseStandingsConfiguration, resolveStandingsRules, sameStandingsRules, type StageRules } from "@/src/domain/tournament/standings"
 import type { StageType } from "@/src/domain/tournament/stage"
 import { getSql, type Sql } from "@/src/server/db"
 
@@ -146,28 +148,42 @@ export async function insertStage(
 }
 
 export async function updateStageRules(
-  input: {
-    tournamentId: string
-    stageId: string
-    actorId: string
-    rules: unknown
-  },
+  input: { tournamentId: string; stageId: string; actorId: string; rules: StageRules },
   sql: Sql = getSql(),
 ): Promise<void> {
+  const parsed = parseStandingsConfiguration(input.rules.standings)
+  if (!parsed.ok) throw new StageConstraintError(parsed.error)
   await sql.begin(async (tx) => {
-    const updated = await tx<{ id: string }[]>`
-      update app.stages
-      set rules = ${tx.json(input.rules as never)}
-      where id = ${input.stageId} and tournament_id = ${input.tournamentId}
-      returning id
+    const [tournament] = await tx<{ status: TournamentStatus; owner_id: string; deleted_at: Date | null }[]>`
+      select status, owner_id, deleted_at from app.tournaments where id = ${input.tournamentId} for update
     `
-    if (!updated[0]) throw new StageConstraintError("Stage not found.")
+    if (!tournament || tournament.deleted_at || tournament.owner_id !== input.actorId || tournament.status === "archived") {
+      throw new StageConstraintError("You cannot change stages in this tournament.")
+    }
+    const locked = completedMutationError(tournament.status)
+    if (locked) throw new StageConstraintError(locked)
+    const [stage] = await tx<{ rules: unknown; stage_type: StageType }[]>`
+      select rules, stage_type from app.stages
+      where id = ${input.stageId} and tournament_id = ${input.tournamentId} for update
+    `
+    if (!stage) throw new StageConstraintError("Stage not found.")
+    if (stage.stage_type === "knockout") throw new StageConstraintError("A knockout stage does not use standings rules.")
+    const previous = resolveStandingsRules(stage.stage_type, stage.rules)
+    // Preserve unrelated stage configuration and the legacy enabled flag.
+    const existing = stage.rules as Record<string, unknown>
+    const previousStandings = existing.standings as Record<string, unknown> | undefined
+    const { scoring: _scoring, ...standings } = previousStandings ?? {}
+    void _scoring
+    const rules = { ...existing, schemaVersion: "1", standings: { ...standings, ...parsed.value } }
+    if (sameStandingsRules(previous, resolveStandingsRules(stage.stage_type, rules))) return
+    await tx`
+      update app.stages set rules = ${tx.json(rules as never)}
+      where id = ${input.stageId} and tournament_id = ${input.tournamentId}
+    `
     await writeAudit(tx, {
-      tournamentId: input.tournamentId,
-      actorId: input.actorId,
-      action: "stage.configuration_changed",
-      entityId: input.stageId,
-      payload: { rules: input.rules },
+      tournamentId: input.tournamentId, actorId: input.actorId,
+      action: "stage.configuration_changed", entityId: input.stageId,
+      payload: { stageId: input.stageId, previousRules: stage.rules, newRules: rules },
     })
   })
 }

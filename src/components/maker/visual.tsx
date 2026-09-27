@@ -72,6 +72,26 @@ export function TeamMark({
   )
 }
 
+export function ChampionBanner({
+  name,
+  shortName,
+  logoUrl,
+}: {
+  name: string
+  shortName: string | null
+  logoUrl: string | null
+}) {
+  return (
+    <section className={`${card} flex items-center gap-4 border-gold/40 p-4 sm:p-5`}>
+      <TeamMark name={name} shortName={shortName} logoUrl={logoUrl} size="lg" />
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-gold">🏆 Tournament Champion</h2>
+        <p className="mt-1 break-words text-2xl font-semibold text-ink">{name}</p>
+      </div>
+    </section>
+  )
+}
+
 export function PageHeading({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="min-w-0">

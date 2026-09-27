@@ -1,6 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { COMPLETED_TOURNAMENT_ERROR, completedMutationError } from "@/src/domain/tournament/champion"
 import { planAddEntry, canManageStageEntries, entryRemoveError, reorderEntries } from "@/src/domain/tournament/stage-entry"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
 import { currentGroupId } from "@/src/server/groups/repository"
@@ -29,6 +30,8 @@ async function authorize(publicId: string, userId: string) {
   if (!canManageStageEntries({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) {
     return { error: "You cannot change stage entries in this tournament." as const }
   }
+  const locked = completedMutationError(tournament.status)
+  if (locked) return { error: locked }
   return { tournament }
 }
 
@@ -40,7 +43,7 @@ export async function addStageEntryAction(formData: FormData): Promise<void> {
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
   if ("error" in allowed || !stageId || !Number.isInteger(number)) {
-    redirect(publicId ? stagesPath(publicId) : "/dashboard")
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
   }
   const stage = await findStage(allowed.tournament.id, stageId)
   const team = await findTeam(allowed.tournament.id, number)
@@ -78,7 +81,9 @@ export async function removeStageEntryAction(formData: FormData): Promise<void> 
   const entryId = String(formData.get("entryId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !entryId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !entryId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const entry = await findStageEntry(allowed.tournament.id, entryId)
   if (!entry) redirect(stagesPath(publicId))
   if (entryRemoveError(await entryIsReferenced(allowed.tournament.id, entryId))) {
@@ -102,7 +107,9 @@ export async function reorderStageEntryAction(formData: FormData): Promise<void>
   const direction = formData.get("direction") === "down" ? "down" : "up"
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !entryId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !entryId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const entry = await findStageEntry(allowed.tournament.id, entryId)
   if (!entry) redirect(stagesPath(publicId))
   const scope = (await listStageEntries(allowed.tournament.id)).filter(

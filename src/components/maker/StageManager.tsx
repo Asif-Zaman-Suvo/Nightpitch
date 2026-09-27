@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { STAGE_TYPES, type StageType } from "@/src/domain/tournament/stage"
 import { ConfirmSubmit } from "@/src/components/maker/ConfirmSubmit"
 import { btnDanger, btnGhost, btnPrimary, control, field, label } from "@/src/components/maker/styles"
@@ -14,6 +14,8 @@ import {
   updateStageRulesAction,
   type StageFormState,
 } from "@/src/server/stages/actions"
+
+import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/src/domain/tournament/standings"
 
 const initial: StageFormState = {}
 const fieldClass = field
@@ -79,39 +81,67 @@ export function EditStageForm({
 }
 
 export function ScoringRulesForm({
-  publicId,
-  stageId,
-  win,
-  draw,
-  loss,
+  publicId, stageId, win, draw, loss, tieBreakers, locked,
 }: {
   publicId: string
   stageId: string
   win: number
   draw: number
   loss: number
+  tieBreakers: TieBreaker[]
+  locked: boolean
 }) {
   const [state, formAction, pending] = useActionState(updateStageRulesAction, initial)
+  const [order, setOrder] = useState(tieBreakers)
+  function move(index: number, offset: number) {
+    setOrder((current) => {
+      const next = [...current]
+      ;[next[index], next[index + offset]] = [next[index + offset], next[index]]
+      return next
+    })
+  }
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
+    <form action={formAction}>
       <input type="hidden" name="publicId" value={publicId} />
       <input type="hidden" name="stageId" value={stageId} />
-      <label className="text-sm">
-        Win
-        <input name="win" required defaultValue={win} inputMode="numeric" className={`${control} mt-1 w-16`} />
-      </label>
-      <label className="text-sm">
-        Draw
-        <input name="draw" required defaultValue={draw} inputMode="numeric" className={`${control} mt-1 w-16`} />
-      </label>
-      <label className="text-sm">
-        Loss
-        <input name="loss" required defaultValue={loss} inputMode="numeric" className={`${control} mt-1 w-16`} />
-      </label>
-      <button type="submit" disabled={pending} className={btnGhost}>
-        Save rules
-      </button>
-      {state.error && <p className="w-full text-sm text-danger">{state.error}</p>}
+      <fieldset disabled={pending || locked} className="space-y-3">
+        <legend className="mb-3 font-medium">Standings Rules</legend>
+        <div className="flex flex-wrap gap-3">
+          {([["win", win], ["draw", draw], ["loss", loss]] as const).map(([name, value]) => (
+            <label key={name} className="text-sm capitalize">
+              {name} points
+              <input name={name} type="number" min="0" step="1" required defaultValue={value}
+                className={`${control} ml-2 w-20`} />
+            </label>
+          ))}
+        </div>
+        <p className="text-sm font-medium">Tie-break order</p>
+        <ol className="space-y-2" aria-label="Tie-break order">
+          {order.map((rule, index) => (
+            <li key={rule} className="flex flex-wrap items-center gap-2 text-sm">
+              <input type="hidden" name="tieBreakers" value={rule} />
+              <span className="min-w-40">{index + 1}. {TIE_BREAKER_LABELS[rule]}</span>
+              <button type="button" className={btnGhost} disabled={index === 0}
+                aria-label={`Move ${TIE_BREAKER_LABELS[rule]} up`} onClick={() => move(index, -1)}>Move up</button>
+              <button type="button" className={btnGhost} disabled={index === order.length - 1}
+                aria-label={`Move ${TIE_BREAKER_LABELS[rule]} down`} onClick={() => move(index, 1)}>Move down</button>
+              {rule !== "points" && <button type="button" className={btnGhost}
+                aria-label={`Remove ${TIE_BREAKER_LABELS[rule]}`}
+                onClick={() => setOrder(order.filter((item) => item !== rule))}>Remove</button>}
+            </li>
+          ))}
+        </ol>
+        <div className="flex flex-wrap gap-2">
+          {TIE_BREAKERS.filter((rule) => !order.includes(rule)).map((rule) => (
+            <button key={rule} type="button" className={btnGhost}
+              onClick={() => setOrder([...order, rule])}>Add {TIE_BREAKER_LABELS[rule]}</button>
+          ))}
+        </div>
+        <p className="text-sm text-text-muted">Ties remaining after this order use team name, then team ID.</p>
+        <button type="submit" className={btnGhost}>{pending ? "Saving…" : "Save rules"}</button>
+      </fieldset>
+      {locked && <p className="mt-2 text-sm text-text-muted">A completed tournament cannot be changed.</p>}
+      {state.error && <p role="alert" className="mt-2 text-sm text-danger">{state.error}</p>}
     </form>
   )
 }

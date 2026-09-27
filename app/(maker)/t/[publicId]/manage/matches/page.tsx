@@ -23,6 +23,10 @@ const errors: Record<string, string> = {
   knockout: "Automatic round-robin fixtures are only available for group and league stages.",
   complete: "Fixtures are already complete.",
   waiting: "This match is waiting for earlier results and cannot be changed yet.",
+  "knockout-draw": "A knockout match cannot end in a draw. A winner is required.",
+  downstream: "This result cannot be changed because a later match is already completed.",
+  final: "A completed tournament cannot have its final result changed.",
+  completed: "A completed tournament cannot be changed.",
 }
 
 export default async function ManageMatchesPage({

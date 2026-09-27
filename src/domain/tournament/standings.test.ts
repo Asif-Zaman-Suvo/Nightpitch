@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { defaultStageRules, calculateStandings, parseScoringRules, resolveStandingsRules, type StandingsInput } from "./standings"
+import { defaultStageRules, calculateStandings, parseScoringRules, resolveStandingsRules, parseTieBreakers, parseStandingsConfiguration, TIE_BREAKERS, type StandingsInput } from "./standings"
 
 const stage = "stage-a"
 const otherStage = "stage-b"
@@ -62,15 +62,14 @@ function groupRows(result: ReturnType<typeof calculateStandings>, groupId: strin
 describe("standings rules", () => {
   it("defaults group and league scoring to 3, 1, and 0", () => {
     expect(defaultStageRules("group").standings).toEqual({
-      enabled: true,
-      scoring: { win: 3, draw: 1, loss: 0 },
+      winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...TIE_BREAKERS],
     })
-    expect(defaultStageRules("league").standings.enabled).toBe(true)
+    expect(resolveStandingsRules("league", defaultStageRules("league")).enabled).toBe(true)
     expect(defaultStageRules("knockout").standings.enabled).toBe(false)
   })
 
   it("rejects a scoring value that is blank or negative", () => {
-    expect(parseScoringRules({ win: "3", draw: "1", loss: "0" }).ok).toBe(true)
+    expect(parseScoringRules({ win: 3, draw: 1, loss: 0 }).ok).toBe(true)
     expect(parseScoringRules({ win: "", draw: "1", loss: "0" }).ok).toBe(false)
     expect(parseScoringRules({ win: "-1", draw: "1", loss: "0" }).ok).toBe(false)
   })
@@ -108,7 +107,7 @@ describe("calculateStandings", () => {
 
   it("uses the stage scoring rules instead of a fixed 3-1-0 table", () => {
     const base = input()
-    base.stage.standings = { enabled: true, scoring: { win: 2, draw: 1, loss: 0 } }
+    base.stage.standings = { tieBreakers: [...TIE_BREAKERS], enabled: true, scoring: { win: 2, draw: 1, loss: 0 } }
     const rows = groupRows(calculateStandings(withMatches([match("m1", "completed", groupA, ["ea", 1, "eb", 0])], base)), groupA)
     expect(rows.find((row) => row.teamId === "a")?.points).toBe(2)
   })
@@ -203,7 +202,7 @@ describe("calculateStandings", () => {
 
   it("returns no table for a knockout stage", () => {
     const base = input()
-    base.stage = { id: stage, stageType: "knockout", standings: { enabled: true, scoring: { win: 3, draw: 1, loss: 0 } } }
+    base.stage = { id: stage, stageType: "knockout", standings: { tieBreakers: [...TIE_BREAKERS], enabled: true, scoring: { win: 3, draw: 1, loss: 0 } } }
     expect(calculateStandings(withMatches([match("m1", "completed", null, ["ea", 1, "eb", 0])], base))).toEqual({ kind: "none" })
   })
 
@@ -222,5 +221,89 @@ describe("calculateStandings", () => {
     expect(result.rows.map((row) => row.teamId).sort()).toEqual(["a", "b", "c", "d", "e"])
     expect(result.rows.find((row) => row.teamId === "a")?.points).toBe(3)
     expect(result.rows.find((row) => row.teamId === "d")?.points).toBe(0)
+  })
+})
+
+describe("configurable standings foundation", () => {
+  it.each([-1, 1.5, "3", null, undefined, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])("rejects invalid points %s", (value) => {
+    for (const key of ["win", "draw", "loss"]) {
+      expect(parseScoringRules({ win: 3, draw: 1, loss: 0, [key]: value }).ok).toBe(false)
+    }
+  })
+
+  it.each([[4, 2, 0], [3, 1, 0], [2, 1, 0], [0, 0, 0]])("accepts scoring %s/%s/%s", (win, draw, loss) => {
+    expect(parseScoringRules({ win, draw, loss })).toEqual({ ok: true, value: { win, draw, loss } })
+  })
+
+  it.each([[], ["goalDifference"], ["points", "points"], ["unknownRule"], ["points", "wins"], ["points", null]])(
+    "rejects invalid tie-break list %j", (...rules) => {
+      expect(parseTieBreakers(rules).ok).toBe(false)
+    },
+  )
+
+  it("requires scoring and tie-breaks in submitted configuration", () => {
+    expect(parseStandingsConfiguration(null).ok).toBe(false)
+    expect(parseStandingsConfiguration({ winPoints: 3, drawPoints: 1, lossPoints: 0 }).ok).toBe(false)
+    expect(parseStandingsConfiguration({ winPoints: "3", drawPoints: 1, lossPoints: 0, tieBreakers: ["points"] }).ok).toBe(false)
+    expect(parseTieBreakers(["goalsScored", "points"])).toEqual({ ok: true, value: ["goalsScored", "points"] })
+    expect(parseTieBreakers(["points"]).ok).toBe(true)
+  })
+
+  it.each([null, { schemaVersion: "1" }, { schemaVersion: "1", standings: { winPoints: 3, drawPoints: 1, lossPoints: 0 } },
+    { schemaVersion: "1", standings: { scoring: { win: 3, draw: 1, loss: 0 } } }])("defaults legacy rules %j", (rules) => {
+    expect(resolveStandingsRules("group", rules)).toEqual({ enabled: true, scoring: { win: 3, draw: 1, loss: 0 }, tieBreakers: [...TIE_BREAKERS] })
+  })
+
+  it("keeps legacy custom scoring and defaults missing tie-breaks", () => {
+    expect(resolveStandingsRules("league", { standings: { scoring: { win: 4, draw: 2, loss: 1 } } }))
+      .toEqual({ enabled: true, scoring: { win: 4, draw: 2, loss: 1 }, tieBreakers: [...TIE_BREAKERS] })
+    expect(resolveStandingsRules("group", { standings: { scoring: { win: -1, draw: 1.5, loss: 0 } } }).scoring)
+      .toEqual({ win: 3, draw: 1, loss: 0 })
+  })
+
+  it.each(["group", "league"] as const)("uses custom scoring and exact ordered tie-breaks in %s", (stageType) => {
+    const base = input({ stageEntries: [entry("ea", "a", "Alpha", groupA), entry("eb", "b", "Bravo", groupA),
+      entry("ec", "c", "Charlie", groupA), entry("ed", "d", "Delta", groupA)] })
+    base.stage.stageType = stageType
+    const data = withMatches([
+      match("ac", "completed", groupA, ["ea", 4, "ec", 2]),
+      match("ad", "completed", groupA, ["ea", 4, "ed", 2]),
+      match("bc", "completed", groupA, ["eb", 3, "ec", 0]),
+      match("bd", "completed", groupA, ["eb", 3, "ed", 1]),
+      match("cd", "completed", groupA, ["ec", 0, "ed", 0]),
+    ], base)
+    const rows = () => {
+      const result = calculateStandings(data)
+      return result.kind === "league" ? result.rows : groupRows(result, groupA)
+    }
+    expect(rows().slice(0, 2).map((row) => row.teamId)).toEqual(["b", "a"])
+    expect(rows().slice(0, 2).map((row) => row.points)).toEqual([6, 6])
+    data.stage.standings = resolveStandingsRules(stageType, { standings: {
+      winPoints: 5, drawPoints: 2, lossPoints: 1, tieBreakers: ["points", "goalsScored", "goalDifference", "teamName"],
+    } })
+    expect(rows().map((row) => row.teamId)).toEqual(["a", "b", "d", "c"])
+    expect(rows().map((row) => row.points)).toEqual([10, 10, 4, 4])
+    data.stage.standings.tieBreakers = ["teamName", "points"]
+    expect(rows().map((row) => row.teamId)).toEqual(["a", "b", "c", "d"])
+    data.stage.standings.tieBreakers = [...TIE_BREAKERS]
+    expect(rows().slice(0, 2).map((row) => row.teamId)).toEqual(["b", "a"])
+  })
+
+  it("uses case-insensitive name fallback and stable IDs regardless of input order", () => {
+    const base = input({ stageEntries: [entry("ez", "z", "alpha", groupA), entry("eb", "b", "Beta", groupA), entry("ea", "a", "Alpha", groupA)] })
+    base.stage.standings.tieBreakers = ["points"]
+    expect(groupRows(calculateStandings(base), groupA).map((row) => row.teamId)).toEqual(["a", "z", "b"])
+    base.stageEntries.reverse()
+    base.stage.standings.tieBreakers = ["points", "teamName"]
+    expect(groupRows(calculateStandings(base), groupA).map((row) => row.teamId)).toEqual(["a", "z", "b"])
+  })
+
+  it.each([-1, 1.5, NaN, Infinity])("ignores invalid completed scores %s", (score) => {
+    expect(groupRows(calculateStandings(withMatches([match("bad", "completed", groupA, ["ea", score, "eb", 0])])), groupA)
+      .every((row) => row.played === 0)).toBe(true)
+  })
+
+  it("forces knockout standings off even with stored enabled rules", () => {
+    expect(resolveStandingsRules("knockout", { standings: { enabled: true } }).enabled).toBe(false)
   })
 })

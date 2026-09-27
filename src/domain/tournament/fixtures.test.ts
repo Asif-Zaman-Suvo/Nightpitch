@@ -120,7 +120,7 @@ describe("planRoundRobinFixtures", () => {
 
   it("does not count a scheduled generated fixture in standings", () => {
     const table = calculateStandings({
-      stage: { id: "stage", stageType: "group", standings: { enabled: true, scoring: { win: 3, draw: 1, loss: 0 } } },
+      stage: { id: "stage", stageType: "group", standings: { tieBreakers: ["points", "goalDifference", "goalsScored", "teamName"], enabled: true, scoring: { win: 3, draw: 1, loss: 0 } } },
       stageGroups: [{ id: "ga", stageId: "stage", name: "Group A" }],
       stageEntries: [
         { id: "a", stageId: "stage", stageGroupId: "ga", teamId: "ta", name: "A" },

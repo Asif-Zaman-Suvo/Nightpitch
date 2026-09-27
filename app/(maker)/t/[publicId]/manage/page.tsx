@@ -3,8 +3,9 @@ import { notFound } from "next/navigation"
 import { tournamentSetup, type SetupFocus } from "@/src/domain/tournament/overview"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
 import { btnPrimary, card } from "@/src/components/maker/styles"
+import { ChampionBanner } from "@/src/components/maker/visual"
 import { listGroups } from "@/src/server/groups/repository"
-import { listMatches } from "@/src/server/matches/repository"
+import { findChampion, listMatches } from "@/src/server/matches/repository"
 import { listStageEntries } from "@/src/server/stage-entries/repository"
 import { listStages } from "@/src/server/stages/repository"
 import { listTeams } from "@/src/server/teams/repository"
@@ -29,12 +30,13 @@ export default async function ManageTournamentPage({
   const publicId = normalizePublicId(raw)
   if (!publicId) notFound()
   const { tournament } = await loadVisibleTournament(publicId, "update")
-  const [teams, { groups }, stages, entries, matches] = await Promise.all([
+  const [teams, { groups }, stages, entries, matches, champion] = await Promise.all([
     listTeams(tournament.id),
     listGroups(tournament.id),
     listStages(tournament.id),
     listStageEntries(tournament.id),
     listMatches(tournament.id),
+    findChampion(tournament.id),
   ])
   const completed = matches.filter((match) => match.status === "completed").length
   const canGenerateFixtures = stages.some(
@@ -51,6 +53,12 @@ export default async function ManageTournamentPage({
     status: tournament.status,
     canGenerateFixtures,
   })
+  const statusLabel = {
+    draft: "Draft",
+    published: "Published",
+    completed: "Completed",
+    archived: "Archived",
+  }[tournament.status]
   const next = setup.focus ? destinations[setup.focus] : null
   const structureHref = groups.length === 0 ? "/groups" : "/stages"
   const kpis = [
@@ -63,6 +71,9 @@ export default async function ManageTournamentPage({
 
   return (
     <div className="space-y-6">
+      {champion ? (
+        <ChampionBanner name={champion.name} shortName={champion.shortName} logoUrl={champion.logoUrl} />
+      ) : null}
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {kpis.map((stat) => (
           <div key={stat.label} className={`${card} min-w-0 px-4 py-3`}>
@@ -111,6 +122,14 @@ export default async function ManageTournamentPage({
         <div className={`${card} p-4 sm:p-5`}>
           <h2 className="font-semibold text-ink">Current setup</h2>
           <dl className="mt-4 space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-text-muted">Status</dt>
+              <dd className="font-medium text-ink">{statusLabel}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-text-muted">Champion</dt>
+              <dd className="font-medium text-ink">{champion?.name ?? "Not yet"}</dd>
+            </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-text-muted">Fixtures</dt>
               <dd className="font-medium text-ink">{matches.length > 0 ? "Created" : "None yet"}</dd>

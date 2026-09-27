@@ -3,6 +3,7 @@ import type { TransactionSql } from "postgres"
 import { completedMutationError } from "@/src/domain/tournament/champion"
 import type { TournamentStatus } from "@/src/domain/tournament/access"
 import { defaultStageRules, parseStandingsConfiguration, resolveStandingsRules, sameStandingsRules, type StageRules } from "@/src/domain/tournament/standings"
+import { parseQualificationConfiguration, resolveQualificationConfiguration, type QualificationConfiguration } from "@/src/domain/tournament/qualification"
 import type { StageType } from "@/src/domain/tournament/stage"
 import { getSql, type Sql } from "@/src/server/db"
 
@@ -183,6 +184,57 @@ export async function updateStageRules(
     await writeAudit(tx, {
       tournamentId: input.tournamentId, actorId: input.actorId,
       action: "stage.configuration_changed", entityId: input.stageId,
+      payload: { stageId: input.stageId, previousRules: stage.rules, newRules: rules },
+    })
+  })
+}
+
+export async function updateQualificationRules(
+  input: { tournamentId: string; stageId: string; actorId: string; qualification: QualificationConfiguration },
+  sql: Sql = getSql(),
+): Promise<void> {
+  const parsed = parseQualificationConfiguration(input.qualification)
+  if (!parsed.ok) throw new StageConstraintError(parsed.error)
+  await sql.begin(async (tx) => {
+    const [tournament] = await tx<{ status: TournamentStatus; owner_id: string; deleted_at: Date | null }[]>`
+      select status, owner_id, deleted_at from app.tournaments where id = ${input.tournamentId} for update
+    `
+    if (!tournament || tournament.deleted_at || tournament.owner_id !== input.actorId || tournament.status === "archived") {
+      throw new StageConstraintError("You cannot change stages in this tournament.")
+    }
+    const locked = completedMutationError(tournament.status)
+    if (locked) throw new StageConstraintError(locked)
+    const [stage] = await tx<{ rules: unknown; stage_type: StageType; position: number }[]>`
+      select rules, stage_type, position from app.stages
+      where id = ${input.stageId} and tournament_id = ${input.tournamentId} for update
+    `
+    if (!stage) throw new StageConstraintError("Stage not found.")
+    if (stage.stage_type !== "knockout") throw new StageConstraintError("Qualification rules belong to a knockout stage.")
+    for (const rule of parsed.value.rules) {
+      const [source] = await tx<{ tournament_id: string; stage_id: string; position: number; stage_type: StageType; group_count: number }[]>`
+        select sg.tournament_id, sg.stage_id, s.position, s.stage_type,
+          (select count(*)::int from app.stage_groups where stage_id = s.id) as group_count
+        from app.stage_groups sg join app.stages s on s.id = sg.stage_id and s.tournament_id = sg.tournament_id
+        where sg.id = ${rule.sourceGroupId} for share of sg, s
+      `
+      if (!source || source.tournament_id !== input.tournamentId) {
+        throw new StageConstraintError("Source group not found in this tournament.")
+      }
+      if (source.stage_id === input.stageId || source.position >= stage.position || source.stage_type === "knockout") {
+        throw new StageConstraintError("Choose a group attached to an earlier group or league stage.")
+      }
+      if (source.stage_type === "league" && source.group_count !== 1) {
+        throw new StageConstraintError("A league source must have exactly one attached group.")
+      }
+    }
+    const previous = resolveQualificationConfiguration(stage.rules)
+    if (!previous.ok) throw new StageConstraintError(previous.error)
+    if (JSON.stringify(previous.value.rules) === JSON.stringify(parsed.value.rules)) return
+    const existing = stage.rules as Record<string, unknown>
+    const rules = { ...existing, qualification: parsed.value }
+    await tx`update app.stages set rules = ${tx.json(rules as never)} where id = ${input.stageId} and tournament_id = ${input.tournamentId}`
+    await writeAudit(tx, {
+      tournamentId: input.tournamentId, actorId: input.actorId, action: "stage.configuration_changed", entityId: input.stageId,
       payload: { stageId: input.stageId, previousRules: stage.rules, newRules: rules },
     })
   })

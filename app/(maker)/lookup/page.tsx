@@ -2,6 +2,7 @@ import Link from "next/link"
 import { formatPublicId } from "@/src/domain/tournament/public-id"
 import { parseTournamentSearch } from "@/src/domain/tournament/search"
 import { PageFrame } from "@/src/components/maker/PageFrame"
+import { PitchPhoto } from "@/src/components/maker/PitchPhoto"
 import { btnSecondary, card } from "@/src/components/maker/styles"
 import { TournamentSearchForm } from "@/src/components/maker/TournamentSearchForm"
 import { EmptyState, StatusBadge } from "@/src/components/maker/visual"
@@ -19,8 +20,12 @@ export default async function LookupPage({
   return (
     <PageFrame>
       <section className="space-y-6 py-2">
+        <div className="relative h-36 overflow-hidden rounded-xl sm:h-44">
+          <PitchPhoto name="stripes" sizes="48rem" className="object-cover object-[center_60%]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-black/20" />
+        </div>
         <div className="space-y-2">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue">Custom Tournament Maker</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue">Nightpitch</p>
           <h1 className="text-3xl font-semibold text-ink">Find a tournament</h1>
           <p className="text-sm leading-6 text-text-muted">Search by tournament ID or search by tournament name.</p>
         </div>

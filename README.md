@@ -1,4 +1,4 @@
-# Custom Tournament Maker
+# Nightpitch
 
 Organizers build a football tournament: teams, groups, stages, fixtures, results, standings, and an optional knockout that ends in a champion.
 

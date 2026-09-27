@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { acceptsGroups } from "@/src/domain/tournament/stage"
 import { formatPublicId, normalizePublicId } from "@/src/domain/tournament/public-id"
 import { PageFrame } from "@/src/components/maker/PageFrame"
-import { StadiumBackground } from "@/src/components/maker/StadiumBackground"
+import { PitchPhoto } from "@/src/components/maker/PitchPhoto"
 import { ShareLinkButton } from "@/src/components/maker/ShareLinkButton"
 import { card } from "@/src/components/maker/styles"
 import { StandingsTable } from "@/src/components/maker/StandingsTable"
@@ -33,9 +33,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { publicId: raw } = await params
   const publicId = normalizePublicId(raw)
-  if (!publicId) return { title: "Custom Tournament Maker" }
+  if (!publicId) return { title: "Nightpitch" }
   const { tournament } = await loadVisibleTournament(publicId, "view")
-  return { title: `${tournament.name} | Custom Tournament Maker` }
+  return { title: `${tournament.name} | Nightpitch` }
 }
 
 export default async function PublicTournamentPage({
@@ -73,9 +73,10 @@ export default async function PublicTournamentPage({
   return (
     <PageFrame width="wide">
       <article className="space-y-8">
-        <header className="rise relative min-h-56 overflow-hidden rounded-xl border border-success/25 bg-navy px-5 py-8 text-white shadow-[0_18px_40px_rgba(0,0,0,0.35)] sm:px-7 sm:py-10">
-          <StadiumBackground />
-          <div className="relative space-y-3">
+        <header className="relative min-h-64 overflow-hidden rounded-xl sm:min-h-72">
+          <PitchPhoto name="stripes" sizes="(min-width: 1024px) 64rem, 100vw" className="object-cover object-center" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/45 to-black/20" />
+          <div className="relative space-y-3 px-5 py-8 sm:px-7 sm:py-10">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-lime">Match center</p>
             <h1 className="break-words text-3xl font-semibold sm:text-5xl">{tournament.name}</h1>
             <p className="font-mono text-sm text-blue">{formatPublicId(tournament.publicId)}</p>

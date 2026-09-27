@@ -1,6 +1,6 @@
 {
-  "name": "Custom Tournament Maker",
-  "short_name": "Tournament Maker",
+  "name": "Nightpitch",
+  "short_name": "Nightpitch",
   "description": "Create a tournament, add teams, groups, stages, and matches.",
   "start_url": "/",
   "display": "standalone",

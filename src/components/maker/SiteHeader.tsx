@@ -10,12 +10,9 @@ export async function SiteHeader() {
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <Link href="/" className="inline-flex min-w-0 items-center gap-2 font-semibold tracking-tight">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-lime/50 bg-navy text-[10px] font-bold text-lime" aria-hidden="true">
-            FT
+            NP
           </span>
-          <span className="truncate">
-            Football Tournament
-            <span className="hidden text-text-muted sm:inline"> Maker</span>
-          </span>
+          <span className="truncate">Nightpitch</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-1 text-sm" aria-label="Site">
           <Link href="/lookup" className="rounded-md px-2.5 py-1.5 text-white/75 hover:bg-white/10 hover:text-white">

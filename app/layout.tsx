@@ -13,26 +13,26 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Custom Tournament Maker",
+  title: "Nightpitch",
   description: "Create a tournament, add teams, groups, stages, and matches.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Tournament Maker",
+    title: "Nightpitch",
   },
   formatDetection: {
     telephone: false,
   },
   openGraph: {
     type: "website",
-    siteName: "Custom Tournament Maker",
-    title: "Custom Tournament Maker",
+    siteName: "Nightpitch",
+    title: "Nightpitch",
     description: "Create a tournament, add teams, groups, stages, and matches.",
   },
   twitter: {
     card: "summary",
-    title: "Custom Tournament Maker",
+    title: "Nightpitch",
     description: "Create a tournament, add teams, groups, stages, and matches.",
   },
   icons: {
@@ -67,10 +67,10 @@ export default function RootLayout({
       <head>
         {/* PWA Meta Tags */}
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="application-name" content="Tournament Maker" />
+        <meta name="application-name" content="Nightpitch" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Tournament Maker" />
+        <meta name="apple-mobile-web-app-title" content="Nightpitch" />
         <script
           dangerouslySetInnerHTML={{
             __html: "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})})}",

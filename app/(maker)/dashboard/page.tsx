@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { canOpenWithoutLogin } from "@/src/domain/tournament/search"
 import { formatPublicId } from "@/src/domain/tournament/public-id"
 import { PageFrame } from "@/src/components/maker/PageFrame"
+import { PitchPhoto } from "@/src/components/maker/PitchPhoto"
 import { btnSecondary, card } from "@/src/components/maker/styles"
 import { TournamentForm } from "@/src/components/maker/TournamentForm"
 import { EmptyState, ErrorNote, StatusBadge, VisibilityBadge } from "@/src/components/maker/visual"
@@ -26,7 +27,11 @@ export default async function DashboardPage() {
     <PageFrame>
     <div className="space-y-10">
       <section className="space-y-4">
-        <h1 className="text-2xl font-semibold text-ink">Your tournaments</h1>
+        <div className="relative h-28 overflow-hidden rounded-xl sm:h-36">
+          <PitchPhoto name="cage" sizes="48rem" className="object-cover object-[center_30%]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/75 to-black/25" />
+          <h1 className="absolute bottom-4 left-4 text-2xl font-semibold text-white">Your tournaments</h1>
+        </div>
         <p className="text-sm text-text-muted">Create and manage your own tournament.</p>
         {databaseError ? (
           <ErrorNote>{databaseError}</ErrorNote>

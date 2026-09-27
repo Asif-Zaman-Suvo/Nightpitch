@@ -1,7 +1,7 @@
 import { SiteHeader } from "@/src/components/maker/SiteHeader"
 
 export const metadata = {
-  title: "Tournament Maker",
+  title: "Nightpitch",
   description: "Create a tournament and share it with a Tournament ID.",
 }
 

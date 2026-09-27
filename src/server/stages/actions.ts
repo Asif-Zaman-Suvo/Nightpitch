@@ -1,6 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { COMPLETED_TOURNAMENT_ERROR, completedMutationError } from "@/src/domain/tournament/champion"
 import { defaultStageRules, parseScoringRules, resolveStandingsRules } from "@/src/domain/tournament/standings"
 import {
   acceptsGroups,
@@ -45,6 +46,8 @@ async function authorize(publicId: string, userId: string) {
   if (!canManageStages({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) {
     return { error: "You cannot change stages in this tournament." as const }
   }
+  const locked = completedMutationError(tournament.status)
+  if (locked) return { error: locked }
   return { tournament }
 }
 
@@ -115,7 +118,9 @@ export async function deleteStageAction(formData: FormData): Promise<void> {
   const stageId = String(formData.get("stageId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !stageId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !stageId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const stage = await findStage(allowed.tournament.id, stageId)
   if (!stage) redirect(stagesPath(publicId))
   const counts = await stageDependencyCounts(allowed.tournament.id, stageId)
@@ -167,7 +172,9 @@ export async function reorderStageAction(formData: FormData): Promise<void> {
   const direction = formData.get("direction") === "down" ? "down" : "up"
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !stageId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !stageId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const stages = await listStages(allowed.tournament.id)
   const next = reorderStages(stages, stageId, direction)
   const current = stages.find((stage) => stage.id === stageId)
@@ -193,7 +200,9 @@ export async function attachGroupAction(formData: FormData): Promise<void> {
   const groupId = String(formData.get("groupId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !stageId || !groupId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !stageId || !groupId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const stage = await findStage(allowed.tournament.id, stageId)
   const group = await findGroup(allowed.tournament.id, groupId)
   const plan = planStageGroupLink({
@@ -226,7 +235,9 @@ export async function detachGroupAction(formData: FormData): Promise<void> {
   const stageGroupId = String(formData.get("stageGroupId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !stageId || !stageGroupId) redirect(publicId ? stagesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !stageId || !stageGroupId) {
+    redirect(publicId ? stagesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   try {
     await detachGroupFromStage({
       tournamentId: allowed.tournament.id,

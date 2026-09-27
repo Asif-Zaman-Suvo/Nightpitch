@@ -8,9 +8,9 @@ import { StadiumBackground } from "@/src/components/maker/StadiumBackground"
 import { ShareLinkButton } from "@/src/components/maker/ShareLinkButton"
 import { card } from "@/src/components/maker/styles"
 import { StandingsTable } from "@/src/components/maker/StandingsTable"
-import { EmptyState, FixtureCard, StatusBadge, TeamMark, stageAccent } from "@/src/components/maker/visual"
+import { ChampionBanner, EmptyState, FixtureCard, StatusBadge, TeamMark, stageAccent } from "@/src/components/maker/visual"
 import { KnockoutBracket } from "@/src/components/maker/KnockoutBracket"
-import { listKnockoutBrackets, listMatches } from "@/src/server/matches/repository"
+import { findChampion, listKnockoutBrackets, listMatches } from "@/src/server/matches/repository"
 import { listStageStandings } from "@/src/server/standings/repository"
 import { listGroups } from "@/src/server/groups/repository"
 import { listStageEntries } from "@/src/server/stage-entries/repository"
@@ -47,7 +47,7 @@ export default async function PublicTournamentPage({
   const publicId = normalizePublicId(raw)
   if (!publicId) notFound()
   const { tournament } = await loadVisibleTournament(publicId, "view")
-  const [teams, { groups }, stages, entries, matches, standings, brackets] = await Promise.all([
+  const [teams, { groups }, stages, entries, matches, standings, brackets, champion] = await Promise.all([
     listTeams(tournament.id),
     listGroups(tournament.id),
     listStages(tournament.id),
@@ -55,6 +55,7 @@ export default async function PublicTournamentPage({
     listMatches(tournament.id),
     listStageStandings(tournament.id),
     listKnockoutBrackets(tournament.id),
+    findChampion(tournament.id),
   ])
 
   const playable = matches.filter((match) => match.participants.length === 2)
@@ -87,6 +88,10 @@ export default async function PublicTournamentPage({
             ) : null}
           </div>
         </header>
+
+        {champion ? (
+          <ChampionBanner name={champion.name} shortName={champion.shortName} logoUrl={champion.logoUrl} />
+        ) : null}
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">Tournament overview</h2>

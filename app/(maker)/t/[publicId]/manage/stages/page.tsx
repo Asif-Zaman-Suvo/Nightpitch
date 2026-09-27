@@ -36,6 +36,7 @@ const errors: Record<string, string> = {
   "bracket-type": "Knockout brackets can only be generated for a knockout stage.",
   "bracket-duplicate": "A participant cannot appear twice in the same bracket.",
   "bracket-exists": "Bracket already generated.",
+  completed: "A completed tournament cannot be changed.",
 }
 
 export default async function ManageStagesPage({

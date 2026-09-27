@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache"
 import { redirect } from "next/navigation"
+import { completedMutationError } from "@/src/domain/tournament/champion"
 import { canManageTeams, parseTeamInput } from "@/src/domain/tournament/team"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
 import { requireUserId } from "@/src/server/auth/session"
@@ -33,6 +34,8 @@ function authorize(tournament: TournamentGate | null, userId: string) {
   ) {
     return { error: "You cannot change teams in this tournament." as const }
   }
+  const locked = completedMutationError(tournament.status)
+  if (locked) return { error: locked }
   return { tournament, userId }
 }
 

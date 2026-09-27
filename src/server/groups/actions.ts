@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache"
 import { redirect } from "next/navigation"
+import { completedMutationError } from "@/src/domain/tournament/champion"
 import { canManageGroups, parseGroupName, planAssignment } from "@/src/domain/tournament/group"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
 import {
@@ -35,6 +36,8 @@ function authorize(tournament: TournamentGate | null, userId: string) {
   if (!canManageGroups({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) {
     return { error: "You cannot change groups in this tournament." as const }
   }
+  const locked = completedMutationError(tournament.status)
+  if (locked) return { error: locked }
   return { tournament, userId }
 }
 

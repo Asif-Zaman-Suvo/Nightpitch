@@ -3,6 +3,7 @@
 import { refresh } from "next/cache"
 import { redirect } from "next/navigation"
 import { planKnockoutBracket } from "@/src/domain/tournament/bracket"
+import { COMPLETED_TOURNAMENT_ERROR, completedMutationError } from "@/src/domain/tournament/champion"
 import { planRoundRobinFixtures } from "@/src/domain/tournament/fixtures"
 import {
   canManageMatches,
@@ -53,12 +54,25 @@ function bracketErrorCode(error: string): string {
   return "bracket-count"
 }
 
-async function authorize(publicId: string, userId: string) {
+function resultErrorCode(message: string): string {
+  if (message.includes("draw")) return "knockout-draw"
+  if (message.includes("later match")) return "downstream"
+  if (message.includes("waiting")) return "waiting"
+  if (message.includes("final result")) return "final"
+  if (message === COMPLETED_TOURNAMENT_ERROR) return "completed"
+  return "result"
+}
+
+async function authorize(publicId: string, userId: string, purpose: "setup" | "result" = "setup") {
   const tournament = await findTournament(publicId)
   if (!tournament || tournament.deletedAt) return { error: "Tournament not found." as const }
   const role = tournament.ownerId === userId ? "owner" as const : null
   if (!canManageMatches({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) {
     return { error: "You cannot change matches in this tournament." as const }
+  }
+  if (purpose === "setup") {
+    const locked = completedMutationError(tournament.status)
+    if (locked) return { error: locked }
   }
   return { tournament }
 }
@@ -94,7 +108,9 @@ export async function generateFixturesAction(formData: FormData): Promise<void> 
   const stageId = String(formData.get("stageId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !stageId) redirect(publicId ? matchesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !stageId) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const stage = await findStage(allowed.tournament.id, stageId)
   if (!stage || stage.tournamentId !== allowed.tournament.id) redirect(matchesPath(publicId, "fixtures"))
   const [entries, matches] = await Promise.all([
@@ -137,6 +153,7 @@ export async function generateKnockoutBracketAction(formData: FormData): Promise
   if (!canManageMatches({ role, status: tournament.status, deleted: tournament.deletedAt !== null }) || !stageId) {
     go(stagesPath(publicId))
   }
+  if (completedMutationError(tournament.status)) go(stagesPath(publicId, "completed"))
   const stage = await findStage(tournament.id, stageId)
   if (!stage || stage.tournamentId !== tournament.id) go(stagesPath(publicId, "bracket-type"))
   const [entries, existingMatchCount] = await Promise.all([
@@ -179,7 +196,9 @@ export async function createMatchAction(formData: FormData): Promise<void> {
   const stageId = String(formData.get("stageId") ?? "")
   const stageGroupId = String(formData.get("stageGroupId") ?? "") || null
   const round = parseRound(formData.get("round"))
-  if ("error" in allowed || !stageId || round === null) redirect(publicId ? matchesPath(publicId, "create") : "/dashboard")
+  if ("error" in allowed || !stageId || round === null) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : "create") : "/dashboard")
+  }
   const stage = await findStage(allowed.tournament.id, stageId)
   const first = await findStageEntry(allowed.tournament.id, String(formData.get("entry1") ?? ""))
   const second = await findStageEntry(allowed.tournament.id, String(formData.get("entry2") ?? ""))
@@ -223,8 +242,10 @@ export async function saveResultAction(formData: FormData): Promise<void> {
   const publicId = normalizePublicId(String(formData.get("publicId") ?? ""))
   const matchId = String(formData.get("matchId") ?? "")
   if (!publicId) redirect("/dashboard")
-  const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !matchId) redirect(publicId ? matchesPath(publicId) : "/dashboard")
+  const allowed = await authorize(publicId, user.id, "result")
+  if ("error" in allowed || !matchId) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const match = await findMatch(allowed.tournament.id, matchId)
   const home = parseScore(formData.get("score1"))
   const away = parseScore(formData.get("score2"))
@@ -236,15 +257,20 @@ export async function saveResultAction(formData: FormData): Promise<void> {
     scores: [home.value, away.value],
   })
   if (!change.ok) redirect(matchesPath(publicId, "result"))
-  await completeMatch({
-    tournamentId: allowed.tournament.id,
-    matchId,
-    actorId: user.id,
-    stageId: match.stageId,
-    entryIds: [match.participants[0].entryId, match.participants[1].entryId],
-    scores: [home.value, away.value],
-    previousStatus: match.status,
-  })
+  try {
+    await completeMatch({
+      tournamentId: allowed.tournament.id,
+      matchId,
+      actorId: user.id,
+      stageId: match.stageId,
+      entryIds: [match.participants[0].entryId, match.participants[1].entryId],
+      scores: [home.value, away.value],
+      previousStatus: match.status,
+    })
+  } catch (error) {
+    if (error instanceof MatchConstraintError) redirect(matchesPath(publicId, resultErrorCode(error.message)))
+    throw error
+  }
   redirect(matchesPath(publicId))
 }
 
@@ -254,7 +280,9 @@ export async function cancelMatchAction(formData: FormData): Promise<void> {
   const matchId = String(formData.get("matchId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !matchId) redirect(publicId ? matchesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !matchId) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const match = await findMatch(allowed.tournament.id, matchId)
   if (!match) redirect(matchesPath(publicId))
   if (match.participants.length !== 2) redirect(matchesPath(publicId, "waiting"))
@@ -278,7 +306,9 @@ export async function restoreMatchAction(formData: FormData): Promise<void> {
   const matchId = String(formData.get("matchId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !matchId) redirect(publicId ? matchesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !matchId) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const match = await findMatch(allowed.tournament.id, matchId)
   if (!match) redirect(matchesPath(publicId))
   if (match.participants.length !== 2) redirect(matchesPath(publicId, "waiting"))
@@ -302,7 +332,9 @@ export async function deleteMatchAction(formData: FormData): Promise<void> {
   const matchId = String(formData.get("matchId") ?? "")
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !matchId) redirect(publicId ? matchesPath(publicId) : "/dashboard")
+  if ("error" in allowed || !matchId) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : undefined) : "/dashboard")
+  }
   const match = await findMatch(allowed.tournament.id, matchId)
   if (!match) redirect(matchesPath(publicId))
   if (match.participants.length !== 2) redirect(matchesPath(publicId, "waiting"))
@@ -325,7 +357,9 @@ export async function updateMatchAction(formData: FormData): Promise<void> {
   const round = parseRound(formData.get("round"))
   if (!publicId) redirect("/dashboard")
   const allowed = await authorize(publicId, user.id)
-  if ("error" in allowed || !matchId || round === null) redirect(publicId ? matchesPath(publicId, "schedule") : "/dashboard")
+  if ("error" in allowed || !matchId || round === null) {
+    redirect(publicId ? matchesPath(publicId, "error" in allowed && allowed.error === COMPLETED_TOURNAMENT_ERROR ? "completed" : "schedule") : "/dashboard")
+  }
   const schedule = formData.has("date") || formData.has("time")
     ? parseSchedule({ date: formData.get("date"), time: formData.get("time") })
     : { ok: true as const, value: parseStartsAt(formData.get("startsAt")) }

@@ -1,8 +1,16 @@
 import "server-only"
 import type { TransactionSql } from "postgres"
+import type { TournamentStatus } from "@/src/domain/tournament/access"
 import type { BracketMatchPlan, BracketView, StoredBracketMatch, StoredBracketSlot } from "@/src/domain/tournament/bracket"
-import { projectBracket } from "@/src/domain/tournament/bracket"
-import type { MatchStatus } from "@/src/domain/tournament/match"
+import { planKnockoutResult, projectBracket } from "@/src/domain/tournament/bracket"
+import {
+  isTournamentFinal,
+  planTournamentCompletion,
+  resolveChampion,
+  type TournamentChampion,
+} from "@/src/domain/tournament/champion"
+import { planStatusChange, type MatchStatus } from "@/src/domain/tournament/match"
+import type { StageType } from "@/src/domain/tournament/stage"
 import { getSql, type Sql } from "@/src/server/db"
 
 export interface MatchParticipantRow {
@@ -97,7 +105,7 @@ export async function listMatches(tournamentId: string, sql: Sql = getSql()): Pr
     join app.stage_entries e on e.id = p.source_entry_id
     join app.teams t on t.id = e.confirmed_team_id
     where p.tournament_id = ${tournamentId}
-      and p.source_kind = 'entry'
+      and p.source_entry_id is not null
     order by p.match_id, p.position
   `
   const byMatch = new Map<string, MatchParticipantRow[]>()
@@ -295,6 +303,119 @@ export async function completeMatch(
   sql: Sql = getSql(),
 ): Promise<void> {
   await sql.begin(async (tx) => {
+    const [match] = await tx<{ status: MatchStatus; stage_id: string; stage_type: StageType }[]>`
+      select m.status, m.stage_id, s.stage_type
+      from app.matches m
+      join app.stages s on s.id = m.stage_id and s.tournament_id = m.tournament_id
+      where m.id = ${input.matchId} and m.tournament_id = ${input.tournamentId}
+      for update of m
+    `
+    if (!match) throw new MatchConstraintError("Match not found.")
+    const change = planStatusChange({ from: match.status, to: "completed", scores: input.scores })
+    if (!change.ok) throw new MatchConstraintError(change.error)
+    const sides = await tx<{ position: number; source_entry_id: string | null; confirmed_team_id: string | null }[]>`
+      select p.position, p.source_entry_id, e.confirmed_team_id
+      from app.match_participants p
+      left join app.stage_entries e on e.id = p.source_entry_id and e.tournament_id = p.tournament_id
+      where p.match_id = ${input.matchId} and p.tournament_id = ${input.tournamentId}
+      order by p.position
+    `
+    const home = sides[0]
+    const away = sides[1]
+    if (!home?.source_entry_id || !away?.source_entry_id || sides.length !== 2) {
+      throw new MatchConstraintError("This match is waiting for earlier results and cannot be changed yet.")
+    }
+    const downstreamRows = match.stage_type === "knockout"
+      ? await tx<{ id: string; match_id: string; position: number; source_entry_id: string | null; status: MatchStatus }[]>`
+          select p.id, p.match_id, p.position, p.source_entry_id, dm.status
+          from app.match_participants p
+          join app.matches dm on dm.id = p.match_id and dm.tournament_id = p.tournament_id
+          where p.tournament_id = ${input.tournamentId}
+            and p.source_match_id = ${input.matchId}
+            and p.source_outcome = 'winner'
+          for update of dm
+        `
+      : []
+    if (downstreamRows.length > 1) throw new MatchConstraintError("The winner could not be placed in the next match.")
+    const downstream = downstreamRows[0] ?? null
+    const plan = planKnockoutResult({
+      stageType: match.stage_type,
+      scores: input.scores,
+      sides: [{ entryId: home.source_entry_id }, { entryId: away.source_entry_id }],
+      downstream: downstream
+        ? { status: downstream.status, resolvedEntryId: downstream.source_entry_id }
+        : null,
+    })
+    if (!plan.ok) throw new MatchConstraintError(plan.error)
+    const finalFacts = match.stage_type === "knockout"
+      ? await tx<{
+          stage_type: StageType
+          stage_position: number
+          latest_knockout_position: number | null
+          round: number
+          highest_round: number
+          matches_in_round: number
+          has_downstream: boolean
+        }[]>`
+          select
+            s.stage_type,
+            s.position as stage_position,
+            (
+              select max(position)::int from app.stages
+              where tournament_id = ${input.tournamentId} and stage_type = 'knockout'
+            ) as latest_knockout_position,
+            m.round_number as round,
+            (
+              select max(round_number)::int from app.matches
+              where tournament_id = ${input.tournamentId} and stage_id = m.stage_id
+            ) as highest_round,
+            (
+              select count(*)::int from app.matches
+              where tournament_id = ${input.tournamentId}
+                and stage_id = m.stage_id
+                and round_number = m.round_number
+            ) as matches_in_round,
+            exists (
+              select 1 from app.match_participants downstream
+              where downstream.tournament_id = ${input.tournamentId}
+                and downstream.source_match_id = m.id
+                and downstream.source_outcome = 'winner'
+            ) as has_downstream
+          from app.matches m
+          join app.stages s on s.id = m.stage_id and s.tournament_id = m.tournament_id
+          where m.id = ${input.matchId} and m.tournament_id = ${input.tournamentId}
+        `
+      : []
+    const facts = finalFacts[0]
+    const isFinal = facts
+      ? isTournamentFinal({
+          stageType: facts.stage_type,
+          stagePosition: facts.stage_position,
+          latestKnockoutStagePosition: facts.latest_knockout_position,
+          round: facts.round,
+          highestRound: facts.highest_round,
+          matchesInRound: facts.matches_in_round,
+          hasDownstream: facts.has_downstream,
+        })
+      : false
+    const [tournament] = await tx<{ status: TournamentStatus }[]>`
+      select status from app.tournaments where id = ${input.tournamentId} for update
+    `
+    if (!tournament) throw new MatchConstraintError("Tournament not found.")
+    const winnerTeamId = plan.winnerEntryId === home.source_entry_id
+      ? home.confirmed_team_id
+      : plan.winnerEntryId === away.source_entry_id
+        ? away.confirmed_team_id
+        : null
+    if (isFinal && plan.winnerEntryId && !winnerTeamId) {
+      throw new MatchConstraintError("The tournament could not be completed.")
+    }
+    const completion = planTournamentCompletion({
+      tournamentStatus: tournament.status,
+      isFinal,
+      winner: plan.winnerEntryId && winnerTeamId ? { entryId: plan.winnerEntryId, teamId: winnerTeamId } : null,
+    })
+    if (!completion.ok) throw new MatchConstraintError(completion.error)
     await tx`
       update app.match_participants
       set score = ${input.scores[0]}
@@ -305,25 +426,89 @@ export async function completeMatch(
       set score = ${input.scores[1]}
       where match_id = ${input.matchId} and tournament_id = ${input.tournamentId} and position = 2
     `
-    await tx`
+    const completed = await tx<{ id: string }[]>`
       update app.matches
       set status = 'completed', decided_by = 'regular'
       where id = ${input.matchId} and tournament_id = ${input.tournamentId}
+      returning id
     `
+    if (!completed[0]) throw new MatchConstraintError("Match not found.")
+    const entryIds: [string, string] = [home.source_entry_id, away.source_entry_id]
     await writeAudit(tx, {
       tournamentId: input.tournamentId,
       actorId: input.actorId,
-      action: input.previousStatus === "completed" ? "match.result_updated" : "match.completed",
+      action: match.status === "completed" ? "match.result_updated" : "match.completed",
       entityId: input.matchId,
       payload: {
-        stageId: input.stageId,
+        stageId: match.stage_id,
         matchId: input.matchId,
-        entryIds: input.entryIds,
-        previousStatus: input.previousStatus,
+        entryIds,
+        previousStatus: match.status,
         status: "completed",
         scores: input.scores,
       },
     })
+    if (plan.slotEntryId && downstream && downstream.source_entry_id !== plan.slotEntryId) {
+      const placed = await tx<{ id: string }[]>`
+        update app.match_participants
+        set source_entry_id = ${plan.slotEntryId}
+        where id = ${downstream.id}
+          and tournament_id = ${input.tournamentId}
+          and source_kind = 'match_outcome'
+          and source_match_id = ${input.matchId}
+        returning id
+      `
+      if (!placed[0]) throw new MatchConstraintError("The winner could not be placed in the next match.")
+      const [winner] = await tx<{ confirmed_team_id: string }[]>`
+        select confirmed_team_id
+        from app.stage_entries
+        where id = ${plan.slotEntryId} and tournament_id = ${input.tournamentId}
+      `
+      if (!winner) throw new MatchConstraintError("The winner could not be placed in the next match.")
+      await tx`
+        insert into app.audit_log (tournament_id, actor_id, action, entity_type, entity_id, after)
+        values (
+          ${input.tournamentId},
+          ${input.actorId},
+          'knockout.winner_propagated',
+          'match',
+          ${downstream.match_id},
+          ${tx.json({
+            tournamentId: input.tournamentId,
+            stageId: match.stage_id,
+            sourceMatchId: input.matchId,
+            downstreamMatchId: downstream.match_id,
+            winnerTeamId: winner.confirmed_team_id,
+            participantSlot: downstream.position,
+          })}
+        )
+      `
+    }
+    if (!completion.complete) return
+    const finished = await tx<{ id: string }[]>`
+      update app.tournaments
+      set status = 'completed'
+      where id = ${input.tournamentId} and status in ('draft', 'published')
+      returning id
+    `
+    if (!finished[0]) throw new MatchConstraintError("The tournament could not be completed.")
+    await tx`
+      insert into app.audit_log (tournament_id, actor_id, action, entity_type, entity_id, after)
+      values (
+        ${input.tournamentId},
+        ${input.actorId},
+        'tournament.completed',
+        'tournament',
+        ${input.tournamentId},
+        ${tx.json({
+          tournamentId: input.tournamentId,
+          finalMatchId: input.matchId,
+          finalStageId: match.stage_id,
+          championTeamId: completion.championTeamId,
+          championStageEntryId: completion.championStageEntryId,
+        })}
+      )
+    `
   })
 }
 
@@ -565,7 +750,17 @@ export async function listKnockoutBrackets(
         { kind: "participant", name: row.name, shortName: row.short_name, logoUrl: row.logo_url, score: row.score },
       ]
     } else if (row.source_kind === "match_outcome" && row.source_match_id) {
-      match.slots = [...match.slots, { kind: "winner", sourceMatchId: row.source_match_id }]
+      match.slots = [
+        ...match.slots,
+        {
+          kind: "winner",
+          sourceMatchId: row.source_match_id,
+          name: row.name,
+          shortName: row.short_name,
+          logoUrl: row.logo_url,
+          score: row.score,
+        },
+      ]
     }
     stage.set(row.id, match)
     byStage.set(row.stage_id, stage)
@@ -574,6 +769,92 @@ export async function listKnockoutBrackets(
     stageId,
     view: projectBracket([...matches.values()]),
   }))
+}
+
+export async function findChampion(tournamentId: string, sql: Sql = getSql()): Promise<TournamentChampion | null> {
+  const rows = await sql<{
+    status: TournamentStatus
+    match_id: string
+    stage_id: string
+    match_status: MatchStatus
+    entry_id: string
+    team_id: string
+    name: string
+    short_name: string | null
+    logo_url: string | null
+    score: number | null
+    position: number
+  }[]>`
+    select
+      tr.status,
+      m.id as match_id,
+      m.stage_id,
+      m.status as match_status,
+      e.id as entry_id,
+      t.id as team_id,
+      t.name,
+      t.short_name,
+      t.logo_url,
+      p.score,
+      p.position
+    from app.tournaments tr
+    join app.stages s on s.tournament_id = tr.id and s.stage_type = 'knockout'
+    join app.matches m on m.stage_id = s.id and m.tournament_id = tr.id
+    join app.match_participants p on p.match_id = m.id and p.tournament_id = tr.id
+    join app.stage_entries e on e.id = p.source_entry_id and e.tournament_id = tr.id
+    join app.teams t on t.id = e.confirmed_team_id and t.tournament_id = tr.id
+    where tr.id = ${tournamentId}
+      and tr.status = 'completed'
+      and s.position = (
+        select max(position) from app.stages
+        where tournament_id = tr.id and stage_type = 'knockout'
+      )
+      and m.round_number = (
+        select max(round_number) from app.matches
+        where tournament_id = tr.id and stage_id = s.id
+      )
+      and (
+        select count(*) from app.matches
+        where tournament_id = tr.id and stage_id = s.id and round_number = m.round_number
+      ) = 1
+      and not exists (
+        select 1 from app.match_participants downstream
+        where downstream.tournament_id = tr.id
+          and downstream.source_match_id = m.id
+          and downstream.source_outcome = 'winner'
+      )
+    order by p.position
+  `
+  const matchIds = new Set(rows.map((row) => row.match_id))
+  const home = rows[0]
+  const away = rows[1]
+  if (matchIds.size !== 1 || !home || !away || rows.length !== 2 || home.score === null || away.score === null) return null
+  return resolveChampion({
+    tournamentStatus: home.status,
+    final: {
+      matchId: home.match_id,
+      stageId: home.stage_id,
+      status: home.match_status,
+      sides: [
+        {
+          entryId: home.entry_id,
+          teamId: home.team_id,
+          name: home.name,
+          shortName: home.short_name,
+          logoUrl: home.logo_url,
+          score: home.score,
+        },
+        {
+          entryId: away.entry_id,
+          teamId: away.team_id,
+          name: away.name,
+          shortName: away.short_name,
+          logoUrl: away.logo_url,
+          score: away.score,
+        },
+      ],
+    },
+  })
 }
 
 export async function deleteMatch(

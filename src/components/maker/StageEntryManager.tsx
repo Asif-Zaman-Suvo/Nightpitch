@@ -36,16 +36,18 @@ export function EntryRow({
   entryId,
   slot,
   name,
+  qualified = false,
 }: {
   publicId: string
   entryId: string
   slot: number
   name: string
+  qualified?: boolean
 }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <span>
-        {slot}. {name}
+        {slot}. {name}{qualified ? " · Qualified" : ""}
       </span>
       <span className="flex gap-3">
         <form action={reorderStageEntryAction}>

@@ -163,5 +163,88 @@ export function calculateQualifiedEntries(input: {
       groups.push({ ...group, state: "ready" })
     }
   }
-  return error ? { ok: false, error, groups, qualified: [] } : { ok: true, groups, qualified }
+  if (!error) return { ok: true, groups, qualified }
+  return {
+    ok: false, error, qualified: [],
+    groups: groups.map((group) => ({
+      ...group, rows: group.rows.map((row) => ({ ...row, qualified: false })),
+    })),
+  }
+}
+
+export interface AppliedEntrySnapshot {
+  id: string
+  slot: number
+  teamId: string
+  name: string
+  sourceKind: "team" | "group_rank" | "pooled_rank" | "match_outcome"
+  sourceGroupId: string | null
+  sourceRank: number | null
+  referenced: boolean
+}
+
+export interface QualificationEntryChange {
+  slot: number
+  teamId: string
+  name: string
+  sourceGroupId: string
+  rank: number
+}
+
+export type QualificationApplyPlan =
+  | { ok: true; status: "unchanged" }
+  | { ok: true; status: "apply"; create: QualificationEntryChange[]; update: (QualificationEntryChange & { id: string })[]; remove: { id: string }[] }
+  | { ok: false; error: string }
+
+const MANUAL_PARTICIPANTS = "This stage already has manually added participants. Remove them before applying qualification."
+const BRACKET_LOCKED = "A bracket already uses these participants. Qualification cannot change them."
+
+export function planQualificationApply(input: {
+  preview: QualificationPreview
+  hasRules: boolean
+  entries: AppliedEntrySnapshot[]
+  destinationHasMatches: boolean
+}): QualificationApplyPlan {
+  if (!input.hasRules) return { ok: false, error: "This stage has no qualification rules." }
+  if (!input.preview.ok) return { ok: false, error: input.preview.error }
+  if (input.preview.qualified.length === 0) return { ok: false, error: "No teams currently qualify." }
+  if (input.entries.some((entry) => entry.sourceKind !== "group_rank")) return { ok: false, error: MANUAL_PARTICIPANTS }
+
+  const key = (groupId: string, rank: number) => `${groupId.toLowerCase()}:${rank}`
+  const existing = new Map<string, AppliedEntrySnapshot>()
+  for (const entry of input.entries) {
+    if (entry.sourceGroupId && entry.sourceRank) existing.set(key(entry.sourceGroupId, entry.sourceRank), entry)
+  }
+  const create: QualificationEntryChange[] = []
+  const update: (QualificationEntryChange & { id: string })[] = []
+  const seen = new Set<string>()
+  input.preview.qualified.forEach((qualified, index) => {
+    const slot = index + 1
+    const match = existing.get(key(qualified.sourceGroupId, qualified.rank))
+    const next = { slot, teamId: qualified.teamId, name: qualified.name, sourceGroupId: qualified.sourceGroupId, rank: qualified.rank }
+    if (!match) {
+      create.push(next)
+      return
+    }
+    seen.add(match.id)
+    if (match.teamId === qualified.teamId && match.slot === slot) return
+    if (match.referenced && match.teamId !== qualified.teamId) return
+    update.push({ ...next, id: match.id })
+  })
+  const blocked = input.entries.find((entry) => {
+    const desired = input.preview.ok ? input.preview.qualified.find((item) => item.sourceGroupId.toLowerCase() === entry.sourceGroupId?.toLowerCase() && item.rank === entry.sourceRank) : undefined
+    return entry.referenced && (!desired || desired.teamId !== entry.teamId)
+  })
+  if (blocked) {
+    const desired = input.preview.qualified.find((item) => item.sourceGroupId.toLowerCase() === blocked.sourceGroupId?.toLowerCase() && item.rank === blocked.sourceRank)
+    return { ok: false, error: desired
+      ? `${blocked.name} is already used in a match and cannot be replaced.`
+      : `${blocked.name} is already used in a match and cannot be removed.` }
+  }
+  const remove = input.entries.filter((entry) => !seen.has(entry.id)).map((entry) => ({ id: entry.id }))
+  if (input.destinationHasMatches && (create.length > 0 || update.length > 0 || remove.length > 0)) {
+    return { ok: false, error: BRACKET_LOCKED }
+  }
+  if (create.length === 0 && update.length === 0 && remove.length === 0) return { ok: true, status: "unchanged" }
+  return { ok: true, status: "apply", create, update, remove }
 }

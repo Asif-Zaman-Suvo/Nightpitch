@@ -7,10 +7,14 @@ vi.mock("@/src/server/tournaments/repository", () => ({ findTournament: vi.fn() 
 vi.mock("@/src/server/stages/repository", async (original) => ({
   ...await original<typeof import("./repository")>(), findStage: vi.fn(), updateQualificationRules: vi.fn(),
 }))
+vi.mock("./apply-qualification", () => ({ applyQualification: vi.fn() }))
+import { revalidatePath } from "next/cache"
+import { redirect } from "next/navigation"
 import { requireUser } from "@/src/server/auth/session"
 import { findTournament } from "@/src/server/tournaments/repository"
 import { findStage, updateQualificationRules, StageConstraintError } from "./repository"
-import { updateQualificationRulesAction } from "./actions"
+import { applyQualification } from "./apply-qualification"
+import { applyQualificationAction, updateQualificationRulesAction } from "./actions"
 
 const group = "10000000-0000-4000-8000-000000000004"
 const configuration = { schemaVersion: "1" as const, rules: [{ type: "group_top_n" as const, sourceGroupId: group, count: 2 }] }
@@ -31,9 +35,12 @@ beforeEach(() => {
 })
 
 describe("updateQualificationRulesAction", () => {
-  it("accepts the form rule and returns a save result", async () => {
-    expect(await updateQualificationRulesAction({}, form())).toEqual({ saved: true })
+  it("accepts the form rule and refreshes the stages page", async () => {
+    await expect(updateQualificationRulesAction({}, form())).rejects.toThrow("redirect:/t/ABCD1234/manage/stages")
     expect(updateQualificationRules).toHaveBeenCalledWith({ tournamentId: "tournament", stageId: "stage", actorId: "owner", qualification: configuration })
+    expect(revalidatePath).toHaveBeenCalledWith("/t/ABCD1234/manage/stages")
+    expect(revalidatePath).toHaveBeenCalledWith("/t/ABCD1234/manage/standings")
+    expect(revalidatePath).toHaveBeenCalledWith("/t/ABCD1234")
   })
   it("rejects nonowners and completed tournaments", async () => {
     vi.mocked(requireUser).mockResolvedValue({ id: "other", email: "", displayName: "" })
@@ -55,5 +62,36 @@ describe("updateQualificationRulesAction", () => {
   it("returns transaction-time source and completed errors", async () => {
     vi.mocked(updateQualificationRules).mockRejectedValue(new StageConstraintError("Source group not found in this tournament."))
     expect(await updateQualificationRulesAction({}, form())).toHaveProperty("error", "Source group not found in this tournament.")
+  })
+})
+
+describe("applyQualificationAction", () => {
+  function request() {
+    const data = new FormData()
+    data.set("publicId", "ABCD1234")
+    data.set("stageId", "stage")
+    return data
+  }
+  it("applies for the owner and refreshes the stages page", async () => {
+    vi.mocked(applyQualification).mockResolvedValue({ status: "applied", created: ["entry"], updated: [], removed: [] })
+    await expect(applyQualificationAction({}, request())).rejects.toThrow("redirect:/t/ABCD1234/manage/stages?applied=1")
+    expect(applyQualification).toHaveBeenCalledWith({ tournamentId: "tournament", stageId: "stage", actorId: "owner" })
+    expect(revalidatePath).toHaveBeenCalledWith("/t/ABCD1234/manage/stages")
+    expect(redirect).toHaveBeenCalledWith("/t/ABCD1234/manage/stages?applied=1")
+  })
+  it("reports an unchanged result without treating it as a new application", async () => {
+    vi.mocked(applyQualification).mockResolvedValue({ status: "unchanged", created: [], updated: [], removed: [] })
+    await expect(applyQualificationAction({}, request())).rejects.toThrow("redirect:/t/ABCD1234/manage/stages?applied=0")
+  })
+  it("rejects non-owners, completed tournaments, and failed qualification", async () => {
+    vi.mocked(requireUser).mockResolvedValue({ id: "other", email: "", displayName: "" })
+    expect(await applyQualificationAction({}, request())).toHaveProperty("error", "You cannot change stages in this tournament.")
+    vi.mocked(requireUser).mockResolvedValue({ id: "owner", email: "", displayName: "" })
+    vi.mocked(findTournament).mockResolvedValue({ id: "tournament", ownerId: "owner", status: "completed", deletedAt: null } as NonNullable<Awaited<ReturnType<typeof findTournament>>>)
+    expect(await applyQualificationAction({}, request())).toHaveProperty("error", "A completed tournament cannot be changed.")
+    vi.mocked(findTournament).mockResolvedValue({ id: "tournament", ownerId: "owner", status: "draft", deletedAt: null } as NonNullable<Awaited<ReturnType<typeof findTournament>>>)
+    vi.mocked(applyQualification).mockRejectedValue(new StageConstraintError("Alpha qualifies more than once."))
+    expect(await applyQualificationAction({}, request())).toHaveProperty("error", "Alpha qualifies more than once.")
+    expect(applyQualification).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 import type { Sql } from "@/src/server/db"
 import { updateStageRules } from "./repository"
-import { TIE_BREAKERS, type StageRules } from "@/src/domain/tournament/standings"
+import { DEFAULT_TIE_BREAKERS, type StageRules } from "@/src/domain/tournament/standings"
 
 const defaults: StageRules = { schemaVersion: "1", standings: {
-  winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...TIE_BREAKERS],
+  winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...DEFAULT_TIE_BREAKERS],
 } }
 const custom: StageRules = { schemaVersion: "1", standings: { ...defaults.standings, tieBreakers: ["points", "goalsScored", "goalDifference", "teamName"] } }
 

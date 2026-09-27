@@ -7,10 +7,11 @@ export interface ScoringRules {
   loss: number
 }
 
-export const TIE_BREAKERS = ["points", "goalDifference", "goalsScored", "teamName"] as const
+export const TIE_BREAKERS = ["points", "headToHead", "goalDifference", "goalsScored", "teamName"] as const
 export type TieBreaker = (typeof TIE_BREAKERS)[number]
+export const DEFAULT_TIE_BREAKERS: TieBreaker[] = ["points", "goalDifference", "goalsScored", "teamName"]
 export const TIE_BREAKER_LABELS: Record<TieBreaker, string> = {
-  points: "Points", goalDifference: "Goal Difference", goalsScored: "Goals Scored", teamName: "Team Name",
+  points: "Points", headToHead: "Head-to-head", goalDifference: "Goal Difference", goalsScored: "Goals Scored", teamName: "Team Name",
 }
 
 export interface StandingsRules {
@@ -42,7 +43,7 @@ export function defaultStageRules(stageType: StageType) {
   }
   return {
     schemaVersion: "1" as const,
-    standings: { winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...TIE_BREAKERS] },
+    standings: { winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...DEFAULT_TIE_BREAKERS] },
   }
 }
 
@@ -94,7 +95,7 @@ export function resolveStandingsRules(stageType: StageType, rules: unknown): Sta
   return {
     enabled: stageType !== "knockout" && stored?.enabled !== false,
     scoring: scoring.ok ? scoring.value : { ...DEFAULT_SCORING },
-    tieBreakers: tieBreakers.ok ? tieBreakers.value : [...TIE_BREAKERS],
+    tieBreakers: tieBreakers.ok ? tieBreakers.value : [...DEFAULT_TIE_BREAKERS],
   }
 }
 
@@ -168,11 +169,14 @@ export function calculateStandings(input: StandingsInput): StageStandings {
 
   if (input.stage.stageType === "league") {
     const rows = zeroRows(entries)
+    const direct: DirectResult[] = []
     for (const match of completed) {
       const result = resultFor(match, null)
-      if (result) applyResult(rows, result, input.stage.standings.scoring)
+      if (!result) continue
+      applyResult(rows, result, input.stage.standings.scoring)
+      direct.push(result)
     }
-    return { kind: "league", rows: sortRows(rows, input.stage.standings.tieBreakers) }
+    return { kind: "league", rows: sortRows(rows, input.stage.standings.tieBreakers, input.stage.standings.scoring, direct) }
   }
 
   return {
@@ -181,11 +185,18 @@ export function calculateStandings(input: StandingsInput): StageStandings {
       .filter((group) => group.stageId === input.stage.id)
       .map((group) => {
         const rows = zeroRows(entries.filter((entry) => entry.stageGroupId === group.id))
+        const direct: DirectResult[] = []
         for (const match of completed) {
           const result = resultFor(match, group.id)
-          if (result) applyResult(rows, result, input.stage.standings.scoring)
+          if (!result) continue
+          applyResult(rows, result, input.stage.standings.scoring)
+          direct.push(result)
         }
-        return { groupId: group.id, groupName: group.name, rows: sortRows(rows, input.stage.standings.tieBreakers) }
+        return {
+          groupId: group.id,
+          groupName: group.name,
+          rows: sortRows(rows, input.stage.standings.tieBreakers, input.stage.standings.scoring, direct),
+        }
       }),
   }
 }
@@ -214,14 +225,16 @@ function zeroRows(entries: StandingsInput["stageEntries"]): Map<string, Standing
   return rows
 }
 
+interface DirectResult {
+  left: { teamId: string }
+  right: { teamId: string }
+  leftScore: number
+  rightScore: number
+}
+
 function applyResult(
   rows: Map<string, StandingRow>,
-  result: {
-    left: { teamId: string }
-    right: { teamId: string }
-    leftScore: number
-    rightScore: number
-  },
+  result: DirectResult,
   scoring: ScoringRules,
 ) {
   const left = rows.get(result.left.teamId)
@@ -256,16 +269,128 @@ function compareNames(a: StandingRow, b: StandingRow): number {
   return compareText(a.name.toLowerCase(), b.name.toLowerCase())
 }
 
-function sortRows(rows: Map<string, StandingRow>, tieBreakers: readonly TieBreaker[]): StandingRow[] {
-  return [...rows.values()].sort((a, b) => {
-    for (const rule of tieBreakers) {
-      const difference = rule === "points" ? b.points - a.points
-        : rule === "goalDifference" ? b.difference - a.difference
-        : rule === "goalsScored" ? b.scored - a.scored
-        : compareNames(a, b)
-      if (difference) return difference
-    }
-    // Names differing only in case remain tied; stable team IDs resolve that tie.
-    return compareNames(a, b) || compareText(a.teamId, b.teamId)
+interface MiniRow {
+  points: number
+  difference: number
+  scored: number
+  conceded: number
+}
+
+function sortRows(
+  rows: Map<string, StandingRow>,
+  tieBreakers: readonly TieBreaker[],
+  scoring: ScoringRules,
+  matches: DirectResult[],
+): StandingRow[] {
+  return orderRows([...rows.values()], tieBreakers, scoring, matches, 0)
+}
+
+function orderRows(
+  rows: StandingRow[],
+  tieBreakers: readonly TieBreaker[],
+  scoring: ScoringRules,
+  matches: DirectResult[],
+  index: number,
+): StandingRow[] {
+  if (rows.length <= 1) return rows
+  if (index >= tieBreakers.length) return byNameThenId(rows)
+  const rule = tieBreakers[index]
+  if (rule === "headToHead") {
+    const bands = headToHeadBands(rows, scoring, matches)
+    if (!bands) return orderRows(rows, tieBreakers, scoring, matches, index + 1)
+    return bands.flatMap((band) => band.length === 1 ? band : orderRows(band, tieBreakers, scoring, matches, index + 1))
+  }
+  const bands = partitionRows(rows, rule)
+  if (bands.length === 1) return orderRows(rows, tieBreakers, scoring, matches, index + 1)
+  return bands.flatMap((band) => orderRows(band, tieBreakers, scoring, matches, index + 1))
+}
+
+function partitionRows(rows: StandingRow[], rule: Exclude<TieBreaker, "headToHead">): StandingRow[][] {
+  const value = (row: StandingRow) => rule === "points" ? row.points
+    : rule === "goalDifference" ? row.difference
+    : rule === "goalsScored" ? row.scored
+    : row.name.toLowerCase()
+  const ordered = [...rows].sort((a, b) => {
+    const left = value(a)
+    const right = value(b)
+    if (left === right) return 0
+    if (typeof left === "string" && typeof right === "string") return compareText(left, right)
+    return (right as number) - (left as number)
   })
+  const bands: StandingRow[][] = []
+  for (const row of ordered) {
+    const last = bands[bands.length - 1]
+    if (!last || value(last[0]) !== value(row)) bands.push([row])
+    else last.push(row)
+  }
+  return bands
+}
+
+function headToHeadBands(rows: StandingRow[], scoring: ScoringRules, matches: DirectResult[]): StandingRow[][] | null {
+  if (rows.length < 2) return rows.map((row) => [row])
+  const stats = miniStandings(rows, scoring, matches)
+  return splitHeadToHead(rows, stats, ["points", "difference", "scored"], scoring, matches)
+}
+
+function splitHeadToHead(
+  rows: StandingRow[],
+  stats: Map<string, MiniRow>,
+  metrics: readonly ("points" | "difference" | "scored")[],
+  scoring: ScoringRules,
+  matches: DirectResult[],
+): StandingRow[][] | null {
+  const [metric, ...rest] = metrics
+  if (!metric) return null
+  const bands = groupByStat(rows, stats, metric)
+  if (bands.length === 1) return splitHeadToHead(rows, stats, rest, scoring, matches)
+  const resolved: StandingRow[][] = []
+  for (const band of bands) {
+    if (band.length === 1) {
+      resolved.push(band)
+      continue
+    }
+    const nested = headToHeadBands(band, scoring, matches)
+    if (!nested) resolved.push(band)
+    else resolved.push(...nested)
+  }
+  return resolved
+}
+
+function groupByStat(
+  rows: StandingRow[],
+  stats: Map<string, MiniRow>,
+  metric: "points" | "difference" | "scored",
+): StandingRow[][] {
+  const ordered = [...rows].sort((a, b) => stats.get(b.teamId)![metric] - stats.get(a.teamId)![metric])
+  const bands: StandingRow[][] = []
+  for (const row of ordered) {
+    const value = stats.get(row.teamId)![metric]
+    const last = bands[bands.length - 1]
+    if (!last || stats.get(last[0].teamId)![metric] !== value) bands.push([row])
+    else last.push(row)
+  }
+  return bands
+}
+
+function miniStandings(rows: StandingRow[], scoring: ScoringRules, matches: DirectResult[]): Map<string, MiniRow> {
+  const ids = new Set(rows.map((row) => row.teamId))
+  const stats = new Map<string, MiniRow>()
+  for (const row of rows) stats.set(row.teamId, { points: 0, difference: 0, scored: 0, conceded: 0 })
+  for (const match of matches) {
+    if (!ids.has(match.left.teamId) || !ids.has(match.right.teamId)) continue
+    addMini(stats.get(match.left.teamId)!, match.leftScore, match.rightScore, scoring)
+    addMini(stats.get(match.right.teamId)!, match.rightScore, match.leftScore, scoring)
+  }
+  return stats
+}
+
+function addMini(stat: MiniRow, scored: number, conceded: number, scoring: ScoringRules) {
+  stat.scored += scored
+  stat.conceded += conceded
+  stat.difference = stat.scored - stat.conceded
+  stat.points += scored > conceded ? scoring.win : scored === conceded ? scoring.draw : scoring.loss
+}
+
+function byNameThenId(rows: StandingRow[]): StandingRow[] {
+  return [...rows].sort((a, b) => compareNames(a, b) || compareText(a.teamId, b.teamId))
 }

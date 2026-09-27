@@ -1,10 +1,9 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useActionState, useState } from "react"
 import { STAGE_TYPES, type StageType } from "@/src/domain/tournament/stage"
 import { ConfirmSubmit } from "@/src/components/maker/ConfirmSubmit"
-import { btnDanger, btnGhost, btnPrimary, control, field, label } from "@/src/components/maker/styles"
+import { btnDanger, btnGhost, btnPrimary, btnPrimarySm, control, field, label } from "@/src/components/maker/styles"
 import {
   attachGroupAction,
   createStageAction,
@@ -18,7 +17,7 @@ import {
 
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/src/domain/tournament/standings"
 import { type GroupTopNRule, type QualificationPreview } from "@/src/domain/tournament/qualification"
-import { updateQualificationRulesAction } from "@/src/server/stages/actions"
+import { applyQualificationAction, updateQualificationRulesAction } from "@/src/server/stages/actions"
 
 const initial: StageFormState = {}
 const fieldClass = field
@@ -157,10 +156,10 @@ export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups,
   preview: QualificationPreview | null
   locked: boolean
 }) {
-  const router = useRouter()
   const [state, formAction, pending] = useActionState(updateQualificationRulesAction, initial)
+  const [applyState, applyAction, applying] = useActionState(applyQualificationAction, initial)
   const [selected, setSelected] = useState(rules.map((rule) => ({ sourceGroupId: rule.sourceGroupId, count: String(rule.count) })))
-  useEffect(() => { if (state.saved) router.refresh() }, [router, state.saved])
+  const qualifiedCount = preview?.ok ? preview.qualified.length : 0
   const available = sourceGroups.filter((group) => !selected.some((rule) => rule.sourceGroupId === group.id))
   return (
     <section className="space-y-3 border-t border-line pt-4">
@@ -197,7 +196,6 @@ export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups,
           <button type="submit" className={btnGhost}>{pending ? "Saving…" : "Save qualification rules"}</button>
         </fieldset>
         {locked && <p className="text-sm text-text-muted">A completed tournament cannot be changed.</p>}
-        {state.saved && <p role="status" className="text-sm text-success">Rules saved. Refreshing preview…</p>}
         {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
       </form>
       {rules.length > 0 && <div className="space-y-3" aria-label="Qualification preview">
@@ -205,12 +203,23 @@ export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups,
         <p className="text-sm text-text-muted">Current qualification based on standings; candidates are not locked.</p>
         {preview?.groups.map((group) => <div key={group.sourceGroupId} className="space-y-1">
           <p className="text-sm font-medium">{group.name} → Top {group.count}</p>
-          {group.message && <p className="text-sm text-text-muted">{group.message}</p>}
+          {group.message && <p className={`text-sm ${group.state === "error" ? "text-danger" : "text-text-muted"}`}>{group.message}</p>}
           {group.state === "ready" && <ol className="space-y-1 text-sm">
-            {group.rows.map((row) => <li key={row.teamId}>{row.rank}. {row.name}{row.qualified ? " ✓" : ""}</li>)}
+            {group.rows.map((row) => <li key={row.teamId}>{row.rank}. {row.name}{preview?.ok && row.qualified ? " ✓" : ""}</li>)}
           </ol>}
         </div>)}
         {preview && !preview.ok && preview.groups.length === 0 && <p className="text-sm text-danger">{preview.error}</p>}
+        <form action={applyAction} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="publicId" value={publicId} />
+          <input type="hidden" name="stageId" value={stageId} />
+          <button type="submit" className={btnPrimarySm} disabled={locked || qualifiedCount === 0 || applying}>
+            {applying ? "Applying…" : "Apply Qualification"}
+          </button>
+          <p className="text-sm text-text-muted">
+            {qualifiedCount > 0 ? `${qualifiedCount} qualified ${qualifiedCount === 1 ? "team" : "teams"}` : "Qualification is not ready to apply."}
+          </p>
+        </form>
+        {applyState.error && <p role="alert" className="text-sm text-danger">{applyState.error}</p>}
       </div>}
     </section>
   )

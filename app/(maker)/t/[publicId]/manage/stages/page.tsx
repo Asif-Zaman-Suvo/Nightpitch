@@ -47,10 +47,10 @@ export default async function ManageStagesPage({
   searchParams,
 }: {
   params: Promise<{ publicId: string }>
-  searchParams: Promise<{ error?: string; rounds?: string; matches?: string }>
+  searchParams: Promise<{ error?: string; rounds?: string; matches?: string; applied?: string }>
 }) {
   const { publicId: raw } = await params
-  const { error, rounds: roundsRaw, matches: matchesRaw } = await searchParams
+  const { error, rounds: roundsRaw, matches: matchesRaw, applied } = await searchParams
   const generatedRounds = /^\d+$/.test(roundsRaw ?? "") ? Number(roundsRaw) : null
   const generatedMatches = /^\d+$/.test(matchesRaw ?? "") ? Number(matchesRaw) : null
   const publicId = normalizePublicId(raw)
@@ -73,6 +73,16 @@ export default async function ManageStagesPage({
   return (
     <div className="space-y-6">
       <PageHeading title="Stages" hint="Order the stages, then choose who plays in each one." />
+      {applied === "1" ? (
+        <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success">
+          Qualification applied. The qualified teams are now stage participants.
+        </p>
+      ) : null}
+      {applied === "0" ? (
+        <p className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted">
+          Qualification already matches these participants.
+        </p>
+      ) : null}
       {generatedRounds !== null && generatedMatches !== null ? (
         <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success">
           Bracket generated. {generatedRounds} {generatedRounds === 1 ? "round" : "rounds"}, {generatedMatches}{" "}
@@ -191,6 +201,7 @@ export default async function ManageStagesPage({
                             entryId={entry.id}
                             slot={entry.slot}
                             name={entry.name}
+                            qualified={entry.sourceKind === "group_rank"}
                           />
                         ))}
                     </ul>

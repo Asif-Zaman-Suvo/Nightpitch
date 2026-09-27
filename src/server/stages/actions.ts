@@ -32,11 +32,11 @@ import {
   updateQualificationRules,
   insertStage,
 } from "@/src/server/stages/repository"
+import { applyQualification } from "@/src/server/stages/apply-qualification"
 import { findTournament } from "@/src/server/tournaments/repository"
 
 export interface StageFormState {
   error?: string
-  saved?: boolean
 }
 
 function stagesPath(publicId: string, error?: string): string {
@@ -200,7 +200,30 @@ export async function updateQualificationRulesAction(_state: StageFormState, for
     if (error instanceof StageConstraintError) return { error: error.message }
     throw error
   }
-  return { saved: true }
+  revalidatePath(stagesPath(publicId))
+  revalidatePath(`/t/${publicId}/manage/standings`)
+  revalidatePath(`/t/${publicId}`)
+  redirect(stagesPath(publicId))
+}
+
+export async function applyQualificationAction(_state: StageFormState, formData: FormData): Promise<StageFormState> {
+  const user = await requireUser()
+  const publicId = normalizePublicId(String(formData.get("publicId") ?? ""))
+  const stageId = String(formData.get("stageId") ?? "")
+  if (!publicId || !stageId) return { error: "Unknown stage." }
+  const allowed = await authorize(publicId, user.id)
+  if ("error" in allowed) return { error: allowed.error }
+  let result: Awaited<ReturnType<typeof applyQualification>>
+  try {
+    result = await applyQualification({ tournamentId: allowed.tournament.id, stageId, actorId: user.id })
+  } catch (error) {
+    if (error instanceof StageConstraintError) return { error: error.message }
+    throw error
+  }
+  revalidatePath(stagesPath(publicId))
+  revalidatePath(`/t/${publicId}/manage/standings`)
+  revalidatePath(`/t/${publicId}`)
+  redirect(`${stagesPath(publicId)}?applied=${result.status === "applied" ? "1" : "0"}`)
 }
 
 export async function reorderStageAction(formData: FormData): Promise<void> {

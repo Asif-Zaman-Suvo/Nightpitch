@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react"
 import { STAGE_TYPES, type StageType } from "@/src/domain/tournament/stage"
 import { ConfirmSubmit } from "@/src/components/maker/ConfirmSubmit"
-import { btnDanger, btnGhost, btnPrimary, control, field, label } from "@/src/components/maker/styles"
+import { btnDanger, btnGhost, btnPrimary, btnPrimarySm, control, field, label } from "@/src/components/maker/styles"
 import {
   attachGroupAction,
   createStageAction,
@@ -16,6 +16,8 @@ import {
 } from "@/src/server/stages/actions"
 
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/src/domain/tournament/standings"
+import { type GroupTopNRule, type QualificationPreview } from "@/src/domain/tournament/qualification"
+import { applyQualificationAction, updateQualificationRulesAction } from "@/src/server/stages/actions"
 
 const initial: StageFormState = {}
 const fieldClass = field
@@ -143,6 +145,83 @@ export function ScoringRulesForm({
       {locked && <p className="mt-2 text-sm text-text-muted">A completed tournament cannot be changed.</p>}
       {state.error && <p role="alert" className="mt-2 text-sm text-danger">{state.error}</p>}
     </form>
+  )
+}
+
+export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups, preview, locked }: {
+  publicId: string
+  stageId: string
+  rules: GroupTopNRule[]
+  sourceGroups: { id: string; name: string }[]
+  preview: QualificationPreview | null
+  locked: boolean
+}) {
+  const [state, formAction, pending] = useActionState(updateQualificationRulesAction, initial)
+  const [applyState, applyAction, applying] = useActionState(applyQualificationAction, initial)
+  const [selected, setSelected] = useState(rules.map((rule) => ({ sourceGroupId: rule.sourceGroupId, count: String(rule.count) })))
+  const qualifiedCount = preview?.ok ? preview.qualified.length : 0
+  const available = sourceGroups.filter((group) => !selected.some((rule) => rule.sourceGroupId === group.id))
+  return (
+    <section className="space-y-3 border-t border-line pt-4">
+      <h3 className="font-medium">Qualification</h3>
+      <p className="text-sm text-text-muted">Choose candidates from current group standings. Saving rules does not add knockout participants.</p>
+      <form action={formAction} className="space-y-3">
+        <input type="hidden" name="publicId" value={publicId} />
+        <input type="hidden" name="stageId" value={stageId} />
+        <fieldset disabled={pending || locked} className="space-y-3">
+          <legend className="sr-only">Qualification rules</legend>
+          {selected.map((rule, index) => (
+            <div key={index} className="flex flex-wrap items-end gap-2">
+              <label className={label}>Source group
+                <select name="sourceGroupId" value={rule.sourceGroupId} className={control}
+                  onChange={(event) => setSelected((current) => current.map((item, i) => i === index
+                    ? { ...item, sourceGroupId: event.target.value } : item))}>
+                  {sourceGroups.filter((group) => group.id === rule.sourceGroupId || !selected.some((item) => item.sourceGroupId === group.id))
+                    .map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                </select>
+              </label>
+              <label className={label}>Qualify top
+                <input name="count" type="number" min="1" step="1" required value={rule.count}
+                  onChange={(event) => setSelected((current) => current.map((item, i) => i === index
+                    ? { ...item, count: event.target.value } : item))} className={`${control} w-20`} />
+              </label>
+              <button type="button" className={btnDanger} onClick={() => setSelected((current) => current.filter((_, i) => i !== index))}
+                aria-label={`Remove qualification rule ${index + 1}`}>Remove</button>
+            </div>
+          ))}
+          {available.length > 0 && <button type="button" className={btnGhost}
+            onClick={() => setSelected((current) => [...current, { sourceGroupId: available[0].id, count: "1" }])}>
+            Add qualification rule
+          </button>}
+          <button type="submit" className={btnGhost}>{pending ? "Saving…" : "Save qualification rules"}</button>
+        </fieldset>
+        {locked && <p className="text-sm text-text-muted">A completed tournament cannot be changed.</p>}
+        {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
+      </form>
+      {rules.length > 0 && <div className="space-y-3" aria-label="Qualification preview">
+        <h4 className="font-medium">Qualification Preview</h4>
+        <p className="text-sm text-text-muted">Current qualification based on standings; candidates are not locked.</p>
+        {preview?.groups.map((group) => <div key={group.sourceGroupId} className="space-y-1">
+          <p className="text-sm font-medium">{group.name} → Top {group.count}</p>
+          {group.message && <p className={`text-sm ${group.state === "error" ? "text-danger" : "text-text-muted"}`}>{group.message}</p>}
+          {group.state === "ready" && <ol className="space-y-1 text-sm">
+            {group.rows.map((row) => <li key={row.teamId}>{row.rank}. {row.name}{preview?.ok && row.qualified ? " ✓" : ""}</li>)}
+          </ol>}
+        </div>)}
+        {preview && !preview.ok && preview.groups.length === 0 && <p className="text-sm text-danger">{preview.error}</p>}
+        <form action={applyAction} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="publicId" value={publicId} />
+          <input type="hidden" name="stageId" value={stageId} />
+          <button type="submit" className={btnPrimarySm} disabled={locked || qualifiedCount === 0 || applying}>
+            {applying ? "Applying…" : "Apply Qualification"}
+          </button>
+          <p className="text-sm text-text-muted">
+            {qualifiedCount > 0 ? `${qualifiedCount} qualified ${qualifiedCount === 1 ? "team" : "teams"}` : "Qualification is not ready to apply."}
+          </p>
+        </form>
+        {applyState.error && <p role="alert" className="text-sm text-danger">{applyState.error}</p>}
+      </div>}
+    </section>
   )
 }
 

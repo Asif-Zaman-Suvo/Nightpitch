@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { planKnockoutBracket, type BracketView } from "@/src/domain/tournament/bracket"
 import { resolveStandingsRules } from "@/src/domain/tournament/standings"
+import { resolveQualificationConfiguration } from "@/src/domain/tournament/qualification"
 import { acceptsGroups, canManageStages } from "@/src/domain/tournament/stage"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
 import { GenerateBracketButton } from "@/src/components/maker/GenerateBracketButton"
@@ -13,14 +14,16 @@ import {
   EditStageForm,
   MoveStageButton,
   ScoringRulesForm,
+  QualificationRulesForm,
 } from "@/src/components/maker/StageManager"
 import { AddEntryForm, EntryRow } from "@/src/components/maker/StageEntryManager"
 import { card } from "@/src/components/maker/styles"
 import { EmptyState, ErrorNote, PageHeading, stageAccent } from "@/src/components/maker/visual"
-import { listKnockoutBrackets } from "@/src/server/matches/repository"
+import { listKnockoutBrackets, listMatches } from "@/src/server/matches/repository"
 import { listGroups } from "@/src/server/groups/repository"
 import { listStageEntries } from "@/src/server/stage-entries/repository"
 import { listStages } from "@/src/server/stages/repository"
+import { buildQualificationPreviews } from "@/src/server/stages/qualification-preview"
 import { listTeams } from "@/src/server/teams/repository"
 import { loadVisibleTournament } from "@/src/server/tournaments/view"
 
@@ -44,23 +47,25 @@ export default async function ManageStagesPage({
   searchParams,
 }: {
   params: Promise<{ publicId: string }>
-  searchParams: Promise<{ error?: string; rounds?: string; matches?: string }>
+  searchParams: Promise<{ error?: string; rounds?: string; matches?: string; applied?: string }>
 }) {
   const { publicId: raw } = await params
-  const { error, rounds: roundsRaw, matches: matchesRaw } = await searchParams
+  const { error, rounds: roundsRaw, matches: matchesRaw, applied } = await searchParams
   const generatedRounds = /^\d+$/.test(roundsRaw ?? "") ? Number(roundsRaw) : null
   const generatedMatches = /^\d+$/.test(matchesRaw ?? "") ? Number(matchesRaw) : null
   const publicId = normalizePublicId(raw)
   if (!publicId) notFound()
   const { tournament, role } = await loadVisibleTournament(publicId, "update")
   if (!canManageStages({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) notFound()
-  const [stages, { groups }, entries, teams, brackets] = await Promise.all([
+  const [stages, { groups }, entries, teams, brackets, matches] = await Promise.all([
     listStages(tournament.id),
     listGroups(tournament.id),
     listStageEntries(tournament.id),
     listTeams(tournament.id),
     listKnockoutBrackets(tournament.id),
+    listMatches(tournament.id),
   ])
+  const qualificationPreviews = buildQualificationPreviews(tournament.id, stages, entries, matches)
   const bracketByStage = new Map(brackets.map((bracket) => [bracket.stageId, bracket.view]))
   const attached = new Set(stages.flatMap((stage) => stage.groups.map((group) => group.sourceGroupId)))
   const available = groups.filter((group) => !attached.has(group.id)).map((group) => ({ id: group.id, name: group.name }))
@@ -68,6 +73,16 @@ export default async function ManageStagesPage({
   return (
     <div className="space-y-6">
       <PageHeading title="Stages" hint="Order the stages, then choose who plays in each one." />
+      {applied === "1" ? (
+        <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success">
+          Qualification applied. The qualified teams are now stage participants.
+        </p>
+      ) : null}
+      {applied === "0" ? (
+        <p className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted">
+          Qualification already matches these participants.
+        </p>
+      ) : null}
       {generatedRounds !== null && generatedMatches !== null ? (
         <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success">
           Bracket generated. {generatedRounds} {generatedRounds === 1 ? "round" : "rounds"}, {generatedMatches}{" "}
@@ -82,6 +97,11 @@ export default async function ManageStagesPage({
           {stages.map((stage) => {
             const participants = entries.filter((entry) => entry.stageId === stage.id)
             const rules = resolveStandingsRules(stage.stageType, stage.rules)
+            const qualification = resolveQualificationConfiguration(stage.rules)
+            const sourceGroups = stages
+              .filter((source) => source.position < stage.position && acceptsGroups(source.stageType)
+                && (source.stageType === "group" || source.groups.length === 1))
+              .flatMap((source) => source.groups.map((group) => ({ id: group.id, name: `${source.name} · ${group.name}` })))
             return (
             <li key={stage.id} className={`${card} space-y-4 border-l-4 p-4 ${stageAccent(stage.stageType)}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -113,6 +133,11 @@ export default async function ManageStagesPage({
               ) : (
                 <p className="text-sm text-text-muted">This stage does not use a standings table.</p>
               )}
+              {stage.stageType === "knockout" && qualification.ok && <QualificationRulesForm
+                publicId={publicId} stageId={stage.id} rules={qualification.value.rules}
+                sourceGroups={sourceGroups} preview={qualificationPreviews.get(stage.id) ?? null}
+                locked={tournament.status === "completed"} key={JSON.stringify(qualification.value)}
+              />}
               <div className="flex flex-wrap gap-3">
                 <MoveStageButton publicId={publicId} stageId={stage.id} direction="up" />
                 <MoveStageButton publicId={publicId} stageId={stage.id} direction="down" />
@@ -176,6 +201,7 @@ export default async function ManageStagesPage({
                             entryId={entry.id}
                             slot={entry.slot}
                             name={entry.name}
+                            qualified={entry.sourceKind === "group_rank"}
                           />
                         ))}
                     </ul>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { defaultStageRules, calculateStandings, parseScoringRules, resolveStandingsRules, parseTieBreakers, parseStandingsConfiguration, TIE_BREAKERS, type StandingsInput } from "./standings"
+import { defaultStageRules, calculateStandings, parseScoringRules, resolveStandingsRules, parseTieBreakers, parseStandingsConfiguration, DEFAULT_TIE_BREAKERS, TIE_BREAKERS, type StandingsInput, type TieBreaker } from "./standings"
 
 const stage = "stage-a"
 const otherStage = "stage-b"
@@ -62,7 +62,7 @@ function groupRows(result: ReturnType<typeof calculateStandings>, groupId: strin
 describe("standings rules", () => {
   it("defaults group and league scoring to 3, 1, and 0", () => {
     expect(defaultStageRules("group").standings).toEqual({
-      winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...TIE_BREAKERS],
+      winPoints: 3, drawPoints: 1, lossPoints: 0, tieBreakers: [...DEFAULT_TIE_BREAKERS],
     })
     expect(resolveStandingsRules("league", defaultStageRules("league")).enabled).toBe(true)
     expect(defaultStageRules("knockout").standings.enabled).toBe(false)
@@ -251,12 +251,12 @@ describe("configurable standings foundation", () => {
 
   it.each([null, { schemaVersion: "1" }, { schemaVersion: "1", standings: { winPoints: 3, drawPoints: 1, lossPoints: 0 } },
     { schemaVersion: "1", standings: { scoring: { win: 3, draw: 1, loss: 0 } } }])("defaults legacy rules %j", (rules) => {
-    expect(resolveStandingsRules("group", rules)).toEqual({ enabled: true, scoring: { win: 3, draw: 1, loss: 0 }, tieBreakers: [...TIE_BREAKERS] })
+    expect(resolveStandingsRules("group", rules)).toEqual({ enabled: true, scoring: { win: 3, draw: 1, loss: 0 }, tieBreakers: [...DEFAULT_TIE_BREAKERS] })
   })
 
   it("keeps legacy custom scoring and defaults missing tie-breaks", () => {
     expect(resolveStandingsRules("league", { standings: { scoring: { win: 4, draw: 2, loss: 1 } } }))
-      .toEqual({ enabled: true, scoring: { win: 4, draw: 2, loss: 1 }, tieBreakers: [...TIE_BREAKERS] })
+      .toEqual({ enabled: true, scoring: { win: 4, draw: 2, loss: 1 }, tieBreakers: [...DEFAULT_TIE_BREAKERS] })
     expect(resolveStandingsRules("group", { standings: { scoring: { win: -1, draw: 1.5, loss: 0 } } }).scoring)
       .toEqual({ win: 3, draw: 1, loss: 0 })
   })
@@ -305,5 +305,255 @@ describe("configurable standings foundation", () => {
 
   it("forces knockout standings off even with stored enabled rules", () => {
     expect(resolveStandingsRules("knockout", { standings: { enabled: true } }).enabled).toBe(false)
+  })
+})
+
+const H2H: TieBreaker[] = ["points", "headToHead", "goalDifference", "goalsScored", "teamName"]
+const GD_FIRST: TieBreaker[] = ["points", "goalDifference", "headToHead", "goalsScored", "teamName"]
+
+function withRules(tieBreakers: TieBreaker[], scoring = { win: 3, draw: 1, loss: 0 }, stageType: "group" | "league" = "group") {
+  const base = input()
+  base.stage.stageType = stageType
+  base.stage.standings = { enabled: true, scoring, tieBreakers }
+  return base
+}
+
+function named(names: string[], groupId: string | null = groupA) {
+  return names.map((name) => entry(`e-${name}`, name, name, groupId))
+}
+
+describe("head-to-head tie-breaker", () => {
+  it("accepts head-to-head once and still rejects duplicates", () => {
+    expect(parseTieBreakers(H2H)).toEqual({ ok: true, value: H2H })
+    expect(parseTieBreakers(["points", "headToHead", "headToHead"]).ok).toBe(false)
+    expect(defaultStageRules("group").standings.tieBreakers).toEqual(DEFAULT_TIE_BREAKERS)
+  })
+
+  it("ranks the winner of the direct match above a team with the same points", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 2, "e-Bravo", 1]),
+      match("ca", "completed", groupA, ["e-Charlie", 5, "e-Alpha", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 0, "e-Delta", 0]),
+    ], base)), groupA)
+    const tied = rows.filter((row) => row.name === "Alpha" || row.name === "Bravo")
+    expect(tied.map((row) => row.points)).toEqual([3, 3])
+    expect(tied.map((row) => row.difference)[0]).toBeLessThan(0)
+    expect(rows.map((row) => row.name)).toEqual(["Charlie", "Alpha", "Bravo", "Delta"])
+  })
+
+  it("does not reorder teams that already differ on points", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.name)).toEqual(["Alpha", "Bravo"])
+  })
+
+  it("aggregates every completed meeting between the same teams", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab1", "completed", groupA, ["e-Alpha", 2, "e-Bravo", 0]),
+      match("ab2", "completed", groupA, ["e-Bravo", 1, "e-Alpha", 1]),
+      match("ca", "completed", groupA, ["e-Charlie", 4, "e-Alpha", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+    ], base)), groupA)
+    const tied = rows.filter((row) => row.name === "Alpha" || row.name === "Bravo")
+    expect(tied.map((row) => row.points)).toEqual([4, 4])
+    expect(tied.map((row) => row.difference)[0]).toBeLessThan(tied.map((row) => row.difference)[1])
+    expect(rows.map((row) => row.name).slice(0, 2)).toEqual(["Alpha", "Bravo"])
+  })
+
+  it("scores the reduced table with the stage win, draw, and loss points", () => {
+    const base = withRules(["headToHead", "points"], { win: 0, draw: 0, loss: 3 })
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("ac", "completed", groupA, ["e-Alpha", 1, "e-Charlie", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.name)).toEqual(["Charlie", "Bravo", "Alpha"])
+  })
+
+  it("ranks three tied teams by head-to-head points, ignoring matches outside the tie", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("ac", "completed", groupA, ["e-Alpha", 1, "e-Charlie", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+      match("cd2", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+    ], base)), groupA)
+    expect(rows.filter((row) => row.name !== "Delta").map((row) => row.points)).toEqual([6, 6, 6])
+    expect(rows.map((row) => row.name).slice(0, 3)).toEqual(["Alpha", "Bravo", "Charlie"])
+  })
+
+  it("uses head-to-head goal difference when head-to-head points are equal", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 2, "e-Alpha", 0]),
+      match("ad", "completed", groupA, ["e-Alpha", 6, "e-Delta", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+    ], base)), groupA)
+    expect(rows.slice(0, 3).map((row) => row.points)).toEqual([6, 6, 6])
+    expect(rows.slice(0, 3).map((row) => row.name)).toEqual(["Charlie", "Bravo", "Alpha"])
+    expect(rows.slice(0, 3).map((row) => row.difference)).toEqual([2, 1, 5])
+  })
+
+  it("uses head-to-head goals scored when head-to-head points and difference are equal", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 2, "e-Bravo", 2]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 1]),
+      match("ca", "completed", groupA, ["e-Charlie", 0, "e-Alpha", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.points)).toEqual([2, 2, 2])
+    expect(rows.map((row) => row.difference)).toEqual([0, 0, 0])
+    expect(rows.map((row) => row.name)).toEqual(["Bravo", "Alpha", "Charlie"])
+  })
+
+  it("recalculates the remaining pair after one team separates on head-to-head points", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab1", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("ab2", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 1, "e-Alpha", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+    ], base)), groupA)
+    expect(rows.slice(0, 3).map((row) => row.points)).toEqual([6, 6, 6])
+    expect(rows.slice(0, 3).map((row) => row.name)).toEqual(["Alpha", "Bravo", "Charlie"])
+  })
+
+  it("falls through to overall goal difference when head-to-head cannot separate anyone", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 1, "e-Alpha", 0]),
+      match("ad", "completed", groupA, ["e-Alpha", 5, "e-Delta", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 2, "e-Delta", 0]),
+    ], base)), groupA)
+    expect(rows.slice(0, 3).map((row) => row.name)).toEqual(["Alpha", "Charlie", "Bravo"])
+  })
+
+  it("falls through to goals scored when head-to-head and overall goal difference are equal", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 0, "e-Bravo", 0]),
+      match("ac", "completed", groupA, ["e-Alpha", 3, "e-Charlie", 1]),
+      match("bc", "completed", groupA, ["e-Bravo", 2, "e-Charlie", 0]),
+    ], base)), groupA)
+    const tied = rows.filter((row) => row.name !== "Charlie")
+    expect(tied.map((row) => row.points)).toEqual([4, 4])
+    expect(tied.map((row) => row.difference)).toEqual([2, 2])
+    expect(tied.map((row) => row.name)).toEqual(["Alpha", "Bravo"])
+  })
+
+  it("uses team name when every numeric criterion is equal", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Bravo", "Alpha"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 1]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.name)).toEqual(["Alpha", "Bravo"])
+  })
+
+  it("uses team id when the remaining teams have the same name", () => {
+    const base = withRules(H2H)
+    base.stageEntries = [entry("e-b", "b", "Alpha", groupA), entry("e-a", "a", "Alpha", groupA)]
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-a", 0, "e-b", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.teamId)).toEqual(["a", "b"])
+  })
+
+  it("applies head-to-head before overall goal difference when that is the configured order", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const played = [
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 2, "e-Alpha", 0]),
+      match("ad", "completed", groupA, ["e-Alpha", 6, "e-Delta", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+    ]
+    expect(groupRows(calculateStandings(withMatches(played, base)), groupA).slice(0, 3).map((row) => row.name))
+      .toEqual(["Charlie", "Bravo", "Alpha"])
+  })
+
+  it("applies overall goal difference before head-to-head when that is the configured order", () => {
+    const base = withRules(GD_FIRST)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie", "Delta"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 2, "e-Alpha", 0]),
+      match("ad", "completed", groupA, ["e-Alpha", 6, "e-Delta", 0]),
+      match("bd", "completed", groupA, ["e-Bravo", 1, "e-Delta", 0]),
+      match("cd", "completed", groupA, ["e-Charlie", 1, "e-Delta", 0]),
+    ], base)), groupA)
+    expect(rows.slice(0, 3).map((row) => row.name)).toEqual(["Alpha", "Charlie", "Bravo"])
+  })
+
+  it("ignores scheduled and cancelled matches", () => {
+    const base = withRules(H2H)
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"])
+    const rows = groupRows(calculateStandings(withMatches([
+      match("done", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("later", "scheduled", groupA, ["e-Bravo", 5, "e-Alpha", 0]),
+      match("void", "cancelled", groupA, ["e-Bravo", 5, "e-Alpha", 0]),
+      match("ac", "completed", groupA, ["e-Charlie", 1, "e-Alpha", 0]),
+      match("bc", "completed", groupA, ["e-Charlie", 1, "e-Bravo", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.name)).toEqual(["Charlie", "Alpha", "Bravo"])
+  })
+
+  it("does not use another stage or the other group", () => {
+    const base = withRules(H2H)
+    base.stageEntries = [...named(["Alpha", "Bravo", "Charlie"]), ...named(["Echo", "Foxtrot"], groupB)]
+    const rows = groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 1, "e-Alpha", 0]),
+      match("other", "completed", groupA, ["e-Alpha", 0, "e-Bravo", 5], otherStage),
+      match("b", "completed", groupB, ["e-Echo", 1, "e-Foxtrot", 0]),
+    ], base)), groupA)
+    expect(rows.map((row) => row.name)).toEqual(["Alpha", "Bravo", "Charlie"])
+    expect(groupRows(calculateStandings(withMatches([
+      match("ab", "completed", groupA, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", groupA, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", groupA, ["e-Charlie", 1, "e-Alpha", 0]),
+      match("b", "completed", groupB, ["e-Echo", 1, "e-Foxtrot", 0]),
+    ], base)), groupB).map((row) => row.name)).toEqual(["Echo", "Foxtrot"])
+  })
+
+  it("counts a league match whose stage group is null", () => {
+    const base = withRules(H2H, { win: 3, draw: 1, loss: 0 }, "league")
+    base.stageEntries = named(["Alpha", "Bravo", "Charlie"], null)
+    const result = calculateStandings(withMatches([
+      match("ab", "completed", null, ["e-Alpha", 1, "e-Bravo", 0]),
+      match("bc", "completed", null, ["e-Bravo", 1, "e-Charlie", 0]),
+      match("ca", "completed", null, ["e-Charlie", 2, "e-Alpha", 0]),
+    ], base))
+    if (result.kind !== "league") throw new Error("expected league")
+    expect(result.rows.map((row) => row.name)).toEqual(["Charlie", "Bravo", "Alpha"])
   })
 })

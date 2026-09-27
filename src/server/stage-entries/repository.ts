@@ -12,6 +12,7 @@ export interface StageEntryRow {
   number: number
   name: string
   shortName: string
+  sourceKind: "team" | "group_rank" | "pooled_rank" | "match_outcome"
 }
 
 export class StageEntryConstraintError extends Error {
@@ -43,6 +44,7 @@ export async function listStageEntries(tournamentId: string, sql: Sql = getSql()
     number: number
     name: string
     short_name: string
+    source_kind: "team" | "group_rank" | "pooled_rank" | "match_outcome"
   }[]>`
     select
       e.id,
@@ -53,11 +55,12 @@ export async function listStageEntries(tournamentId: string, sql: Sql = getSql()
       e.confirmed_team_id as team_id,
       t.number,
       t.name,
-      t.short_name
+      t.short_name,
+      e.source_kind
     from app.stage_entries e
     join app.teams t on t.id = e.confirmed_team_id and t.tournament_id = e.tournament_id
     where e.tournament_id = ${tournamentId}
-      and e.source_kind = 'team'
+      and e.confirmed_team_id is not null
     order by e.stage_id, e.group_id nulls first, e.slot, e.id
   `
   return rows.map((row) => ({
@@ -70,6 +73,7 @@ export async function listStageEntries(tournamentId: string, sql: Sql = getSql()
     number: row.number,
     name: row.name,
     shortName: row.short_name,
+    sourceKind: row.source_kind,
   }))
 }
 

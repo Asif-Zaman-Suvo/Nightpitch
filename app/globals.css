@@ -33,7 +33,7 @@
   input, select, textarea { min-width: 0; }
   button:disabled { cursor: not-allowed; opacity: .55; }
   summary { padding-block: .5rem; }
-  section[id] { scroll-margin-top: 5rem; }
+  [id] { scroll-margin-top: 8rem; }
   ::selection { background: #bce6d2; color: #102c23; }
 }
 
@@ -116,8 +116,8 @@
 .match-card[data-status="cancelled"] { border-top-color: #b93838; }
 .stage-track { display: flex; overflow-x: auto; gap: .75rem; padding-bottom: .5rem; }
 .stage-track > a { flex: 1; min-width: 180px; }
-.public-nav { position: sticky; top: 0; z-index: 20; display: flex; overflow-x: auto; gap: .5rem; background: #f3f5f2f5; padding-block: .75rem; border-bottom: 1px solid var(--border); }
-.public-nav a { white-space: nowrap; padding: .65rem 1rem; border-radius: 8px; font-size: .875rem; font-weight: 600; }
+.public-nav { position: sticky; top: 4rem; z-index: 30; display: flex; overflow-x: auto; gap: .5rem; background: #f3f5f2f5; padding-block: .5rem; border-bottom: 1px solid var(--border); }
+.public-nav a { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; padding: .65rem 1rem; border-radius: 8px; font-size: .875rem; font-weight: 600; }
 .public-nav a:hover { background: #e0f3e9; color: #086345; }
 .skip-link { position: fixed; left: 1rem; top: -5rem; z-index: 100; padding: .75rem 1rem; background: white; color: #112c24; }
 .skip-link:focus { top: 1rem; }

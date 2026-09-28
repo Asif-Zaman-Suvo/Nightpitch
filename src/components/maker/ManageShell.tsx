@@ -26,15 +26,15 @@ export function ManageShell({ publicId, name, status, visibility, description, c
   const active = links.find((link) => link.segment ? pathname.startsWith(`${base}${link.segment}`) : pathname === base)
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col lg:flex-row">
-      <aside className="shrink-0 border-b border-line bg-surface lg:min-h-[calc(100vh-4rem)] lg:w-56 lg:border-b-0 lg:border-r">
-        <div className="sticky top-0">
+      <aside className="sticky top-16 z-40 w-full shrink-0 border-b border-line bg-surface shadow-sm lg:static lg:min-h-[calc(100vh-4rem)] lg:w-56 lg:border-b-0 lg:border-r lg:shadow-none">
+        <div className="lg:sticky lg:top-16 lg:max-h-[calc(100dvh-4rem)] lg:overflow-y-auto">
           <div className="hidden px-5 pb-5 pt-7 lg:block">
             <Link href="/dashboard" className="text-xs font-medium text-text-muted hover:text-lime">← All tournaments</Link>
             <p className="mt-7 text-[10px] font-bold uppercase tracking-[.18em] text-text-muted">Tournament workspace</p>
             <p className="mt-2 break-words font-semibold">{name}</p>
             <p className="mt-1 font-mono text-xs text-text-muted">{formatPublicId(publicId)}</p>
           </div>
-          <nav aria-label="Tournament" className="flex gap-1 overflow-x-auto p-3 lg:flex-col">
+          <nav aria-label="Tournament" className="flex gap-1 overflow-x-auto p-2 lg:flex-col lg:overflow-x-visible lg:p-3">
             {links.map((link) => {
               const selected = active?.label === link.label
               return <Link key={link.label} href={`${base}${link.segment}`} aria-current={selected ? "page" : undefined}

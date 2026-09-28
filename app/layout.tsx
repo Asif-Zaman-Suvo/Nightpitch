@@ -37,11 +37,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/icon-192x192.svg", sizes: "192x192", type: "image/svg+xml" },
-      { url: "/icons/icon-512x512.svg", sizes: "512x512", type: "image/svg+xml" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/icons/icon-152x152.svg", sizes: "152x152", type: "image/svg+xml" },
+      { url: "/icons/icon-152x152.png", sizes: "152x152", type: "image/png" },
     ],
   },
 }
@@ -74,12 +74,6 @@ export default function RootLayout({
             __html: "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})})}",
           }}
         />
-        <link rel="apple-touch-icon" href="/icons/icon-152x152.svg" />
-        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.svg" />
-        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.svg" />
-        <link rel="icon" type="image/svg+xml" sizes="192x192" href="/icons/icon-192x192.svg" />
-        <link rel="icon" type="image/svg+xml" sizes="512x512" href="/icons/icon-512x512.svg" />
-        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className="flex min-h-full flex-col bg-pitch text-foreground">
         <a className="skip-link" href="#main-content">Skip to content</a>

@@ -38,7 +38,8 @@ export default async function ManageGroupsPage({
 
   return (
     <div className="space-y-6">
-      <PageHeading title="Groups" hint="Groups can hold different numbers of teams." />
+      <PageHeading title="Groups" hint={`${groups.length} groups · ${unassigned.length} unassigned teams. Move teams between groups using the controls below.`} />
+      {groups.length > 1 && <p className="rounded-lg border border-line bg-surface p-4 text-sm text-text-muted">{new Set(groups.map((group) => group.teams.length)).size === 1 ? "Groups are balanced: each has the same number of teams." : `Group sizes range from ${Math.min(...groups.map((group) => group.teams.length))} to ${Math.max(...groups.map((group) => group.teams.length))} teams. Uneven groups are supported.`}</p>}
       {error && errors[error] && <ErrorNote>{errors[error]}</ErrorNote>}
       {groups.length === 0 ? (
         <EmptyState title="No groups yet">Create groups to organize your teams.</EmptyState>
@@ -90,7 +91,7 @@ export default async function ManageGroupsPage({
         ) : (
           <ul className="mt-3 flex flex-wrap gap-2">
             {unassigned.map((team) => (
-              <li key={team.id} className="rounded-full border border-line bg-navy px-3 py-1 text-sm font-medium text-ink">
+              <li key={team.id} className="rounded-full border border-line bg-mist px-3 py-1 text-sm font-medium text-ink">
                 {team.name}
               </li>
             ))}

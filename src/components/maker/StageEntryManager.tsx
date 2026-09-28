@@ -1,5 +1,7 @@
 "use client"
 
+import { PendingSubmit } from "@/src/components/maker/PendingSubmit"
+
 import { btnDanger, btnGhost, control } from "@/src/components/maker/styles"
 import { addStageEntryAction, removeStageEntryAction, reorderStageEntryAction } from "@/src/server/stage-entries/actions"
 
@@ -24,9 +26,9 @@ export function AddEntryForm({
           </option>
         ))}
       </select>
-      <button type="submit" className={btnGhost}>
+      <PendingSubmit className={btnGhost}>
         Add team
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -54,24 +56,24 @@ export function EntryRow({
           <input type="hidden" name="publicId" value={publicId} />
           <input type="hidden" name="entryId" value={entryId} />
           <input type="hidden" name="direction" value="up" />
-          <button type="submit" className={btnGhost}>
+          <PendingSubmit className={btnGhost}>
             Up
-          </button>
+          </PendingSubmit>
         </form>
         <form action={reorderStageEntryAction}>
           <input type="hidden" name="publicId" value={publicId} />
           <input type="hidden" name="entryId" value={entryId} />
           <input type="hidden" name="direction" value="down" />
-          <button type="submit" className={btnGhost}>
+          <PendingSubmit className={btnGhost}>
             Down
-          </button>
+          </PendingSubmit>
         </form>
         <form action={removeStageEntryAction}>
           <input type="hidden" name="publicId" value={publicId} />
           <input type="hidden" name="entryId" value={entryId} />
-          <button type="submit" className={btnDanger}>
+          <PendingSubmit className={btnDanger}>
             Remove
-          </button>
+          </PendingSubmit>
         </form>
       </span>
     </li>

@@ -14,14 +14,14 @@ const visibilityStatus = {
 } as const
 
 const matchStatus = {
-  scheduled: { label: "Scheduled", tone: "bg-blue-soft text-blue" },
+  scheduled: { label: "Upcoming", tone: "bg-warn-soft text-warn" },
   completed: { label: "Completed", tone: "bg-success-soft text-success" },
   cancelled: { label: "Cancelled", tone: "bg-danger-soft text-danger" },
 } as const
 
 function Badge({ label, tone }: { label: string; tone: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
       {label}
     </span>
@@ -65,7 +65,7 @@ export function TeamMark({
   return (
     <span
       aria-hidden="true"
-      className={`team-mark inline-flex ${box} shrink-0 items-center justify-center rounded-full border border-lime/40 bg-navy font-semibold tracking-wide text-lime shadow-[0_0_16px_rgba(214,255,74,0.15)]`}
+      className={`team-mark inline-flex ${box} shrink-0 items-center justify-center rounded-full border border-lime/40 bg-navy font-semibold tracking-wide text-lime `}
     >
       {initials}
     </span>
@@ -76,17 +76,20 @@ export function ChampionBanner({
   name,
   shortName,
   logoUrl,
+  finalScore,
 }: {
   name: string
   shortName: string | null
   logoUrl: string | null
+  finalScore?: string
 }) {
   return (
-    <section className={`${card} flex items-center gap-4 border-gold/40 p-4 sm:p-5`}>
+    <section className={`${card} champion-banner rise flex items-center gap-4 border-gold/40 p-4 sm:p-5`}>
       <TeamMark name={name} shortName={shortName} logoUrl={logoUrl} size="lg" />
       <div className="min-w-0">
         <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-gold">🏆 Tournament Champion</h2>
         <p className="mt-1 break-words text-2xl font-semibold text-ink">{name}</p>
+        <p className="mt-2 text-sm text-text-muted">{finalScore ? `Final · ${finalScore}` : "The final whistle. A place in tournament history."}</p>
       </div>
     </section>
   )
@@ -95,7 +98,7 @@ export function ChampionBanner({
 export function PageHeading({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <h2 className="text-xl font-semibold uppercase tracking-[0.08em] text-ink">{title}</h2>
+      <h2 className="text-2xl font-semibold tracking-tight text-ink">{title}</h2>
       {hint ? <p className="mt-1 text-sm leading-6 text-text-muted">{hint}</p> : null}
     </div>
   )
@@ -103,7 +106,7 @@ export function PageHeading({ title, hint }: { title: string; hint?: string }) {
 
 export function EmptyState({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-success/30 bg-surface/80 px-4 py-10 text-center">
+    <div className="rounded-xl border border-dashed border-line bg-surface/80 px-4 py-10 text-center">
       <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-success-soft text-success" aria-hidden="true">
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="M7 4h10v3a5 5 0 0 1-10 0V4Z" />
@@ -152,22 +155,22 @@ export function FixtureCard({
   const completed = status === "completed"
   const cancelled = status === "cancelled"
   return (
-    <article className={`${card} match-card min-w-0 overflow-hidden ${cancelled ? "opacity-75" : ""}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-success/20 px-4 py-2">
+    <article data-status={status} className={`${card} match-card min-w-0 overflow-hidden ${cancelled ? "opacity-75" : ""}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
         <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">{meta}</p>
         <MatchStatusBadge status={status} />
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-5 sm:gap-4 sm:px-6">
-        <Side team={home} align="end" score={completed ? home.score : null} muted={cancelled} />
+        <Side team={home} align="end" winner={completed && home.score != null && away.score != null && home.score > away.score} score={completed ? home.score : null} muted={cancelled} />
         <span className={`text-xs font-semibold uppercase tracking-[0.2em] text-lime ${completed ? "score-pop" : ""}`}>
           {completed ? "–" : "vs"}
         </span>
-        <Side team={away} align="start" score={completed ? away.score : null} muted={cancelled} />
+        <Side team={away} align="start" winner={completed && home.score != null && away.score != null && away.score > home.score} score={completed ? away.score : null} muted={cancelled} />
       </div>
       {kickoff ? (
         <p className="px-4 pb-4 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">{kickoff}</p>
       ) : null}
-      {children ? <div className="space-y-3 border-t border-line bg-navy/40 px-4 py-3">{children}</div> : null}
+      {children ? <div className="space-y-3 border-t border-line bg-mist/60 px-4 py-3">{children}</div> : null}
     </article>
   )
 }
@@ -177,15 +180,18 @@ function Side({
   align,
   score,
   muted,
+  winner,
 }: {
   team: { name: string; shortName?: string | null; logoUrl?: string | null }
   align: "start" | "end"
   score?: number | null
   muted: boolean
+  winner: boolean
 }) {
   const name = (
     <span className={`min-w-0 break-words text-sm font-semibold sm:text-base ${muted ? "text-text-muted" : "text-ink"} ${align === "end" ? "text-right" : "text-left"}`}>
       {team.name}
+      {winner ? <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-success">Winner</span> : null}
     </span>
   )
   const mark = <TeamMark name={team.name} shortName={team.shortName} logoUrl={team.logoUrl} />
@@ -194,7 +200,7 @@ function Side({
       <span className="score-pop text-2xl font-semibold tabular-nums text-ink sm:text-4xl">{score}</span>
     ) : null
   return (
-    <div className={`flex min-w-0 items-center gap-2 ${align === "end" ? "justify-end" : "justify-start"}`}>
+    <div className={`match-side flex min-w-0 items-center gap-2 ${align === "end" ? "justify-end" : "justify-start"}`}>
       {align === "end" ? (
         <>
           {mark}

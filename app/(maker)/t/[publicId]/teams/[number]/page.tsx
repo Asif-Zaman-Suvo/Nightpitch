@@ -22,10 +22,11 @@ export default async function TeamPage({
 
   return (
     <PageFrame>
-    <article className={`${card} space-y-4 p-5`}>
+    <article className={`${card} space-y-6 p-6 sm:p-8`}>
       <Link href={`/t/${publicId}`} className="text-sm font-medium text-blue">
         {tournament.name}
       </Link>
+      <p className="text-xs font-semibold uppercase tracking-[.18em] text-lime">Team profile · #{team.number}</p>
       <div className="flex items-center gap-4">
         <TeamMark name={team.name} shortName={team.shortName} logoUrl={team.logoUrl} size="lg" />
         <div className="min-w-0">

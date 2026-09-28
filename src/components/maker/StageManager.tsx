@@ -1,5 +1,7 @@
 "use client"
 
+import { PendingSubmit } from "@/src/components/maker/PendingSubmit"
+
 import { useActionState, useState } from "react"
 import { STAGE_TYPES, type StageType } from "@/src/domain/tournament/stage"
 import { ConfirmSubmit } from "@/src/components/maker/ConfirmSubmit"
@@ -42,10 +44,10 @@ export function AddStageForm({ publicId }: { publicId: string }) {
           ))}
         </select>
       </label>
-      <button type="submit" disabled={pending} className={btnPrimary}>
+      <PendingSubmit disabled={pending} className={btnPrimary}>
         {pending ? "Adding" : "Add stage"}
-      </button>
-      {state.error && <p className="w-full text-sm text-danger">{state.error}</p>}
+      </PendingSubmit>
+      {state.error && <p role="alert" className="w-full text-sm text-danger">{state.error}</p>}
     </form>
   )
 }
@@ -74,10 +76,10 @@ export function EditStageForm({
           </option>
         ))}
       </select>
-      <button type="submit" disabled={pending} className={btnGhost}>
+      <PendingSubmit disabled={pending} className={btnGhost}>
         Save
-      </button>
-      {state.error && <p className={btnDanger}>{state.error}</p>}
+      </PendingSubmit>
+      {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
     </form>
   )
 }
@@ -140,7 +142,7 @@ export function ScoringRulesForm({
           ))}
         </div>
         <p className="text-sm text-text-muted">Ties remaining after this order use team name, then team ID.</p>
-        <button type="submit" className={btnGhost}>{pending ? "Saving…" : "Save rules"}</button>
+        <PendingSubmit className={btnGhost}>{pending ? "Saving…" : "Save rules"}</PendingSubmit>
       </fieldset>
       {locked && <p className="mt-2 text-sm text-text-muted">A completed tournament cannot be changed.</p>}
       {state.error && <p role="alert" className="mt-2 text-sm text-danger">{state.error}</p>}
@@ -193,7 +195,7 @@ export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups,
             onClick={() => setSelected((current) => [...current, { sourceGroupId: available[0].id, count: "1" }])}>
             Add qualification rule
           </button>}
-          <button type="submit" className={btnGhost}>{pending ? "Saving…" : "Save qualification rules"}</button>
+          <PendingSubmit className={btnGhost}>{pending ? "Saving…" : "Save qualification rules"}</PendingSubmit>
         </fieldset>
         {locked && <p className="text-sm text-text-muted">A completed tournament cannot be changed.</p>}
         {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
@@ -205,18 +207,18 @@ export function QualificationRulesForm({ publicId, stageId, rules, sourceGroups,
           <p className="text-sm font-medium">{group.name} → Top {group.count}</p>
           {group.message && <p className={`text-sm ${group.state === "error" ? "text-danger" : "text-text-muted"}`}>{group.message}</p>}
           {group.state === "ready" && <ol className="space-y-1 text-sm">
-            {group.rows.map((row) => <li key={row.teamId}>{row.rank}. {row.name}{preview?.ok && row.qualified ? " ✓" : ""}</li>)}
+            {group.rows.map((row) => <li key={row.teamId} className={`rounded-lg px-3 py-2 ${preview?.ok && row.qualified ? "bg-success-soft font-medium text-success" : "bg-mist text-text-muted"}`}>{row.rank}. {row.name}{preview?.ok && row.qualified ? " ✓" : ""}</li>)}
           </ol>}
         </div>)}
         {preview && !preview.ok && preview.groups.length === 0 && <p className="text-sm text-danger">{preview.error}</p>}
         <form action={applyAction} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="publicId" value={publicId} />
           <input type="hidden" name="stageId" value={stageId} />
-          <button type="submit" className={btnPrimarySm} disabled={locked || qualifiedCount === 0 || applying}>
+          <PendingSubmit className={btnPrimarySm} disabled={locked || qualifiedCount === 0 || applying}>
             {applying ? "Applying…" : "Apply Qualification"}
-          </button>
+          </PendingSubmit>
           <p className="text-sm text-text-muted">
-            {qualifiedCount > 0 ? `${qualifiedCount} qualified ${qualifiedCount === 1 ? "team" : "teams"}` : "Qualification is not ready to apply."}
+            {qualifiedCount > 0 ? `${qualifiedCount} ${qualifiedCount === 1 ? "team will" : "teams will"} advance to this knockout stage.` : "Qualification is not ready to apply."}
           </p>
         </form>
         {applyState.error && <p role="alert" className="text-sm text-danger">{applyState.error}</p>}
@@ -239,9 +241,9 @@ export function MoveStageButton({
       <input type="hidden" name="publicId" value={publicId} />
       <input type="hidden" name="stageId" value={stageId} />
       <input type="hidden" name="direction" value={direction} />
-      <button type="submit" className={btnGhost}>
+      <PendingSubmit className={btnGhost}>
         {direction === "up" ? "Move up" : "Move down"}
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -284,9 +286,9 @@ export function AttachGroupForm({
           </option>
         ))}
       </select>
-      <button type="submit" className={btnGhost}>
+      <PendingSubmit className={btnGhost}>
         Attach
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -305,9 +307,9 @@ export function DetachGroupButton({
       <input type="hidden" name="publicId" value={publicId} />
       <input type="hidden" name="stageId" value={stageId} />
       <input type="hidden" name="stageGroupId" value={stageGroupId} />
-      <button type="submit" className={btnDanger}>
+      <PendingSubmit className={btnDanger}>
         Detach
-      </button>
+      </PendingSubmit>
     </form>
   )
 }

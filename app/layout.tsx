@@ -49,9 +49,7 @@ export const metadata: Metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: "#050816",
+  themeColor: "#112c24",
 }
 
 export default function RootLayout({
@@ -83,11 +81,8 @@ export default function RootLayout({
         <link rel="icon" type="image/svg+xml" sizes="512x512" href="/icons/icon-512x512.svg" />
         <link rel="manifest" href="/manifest.json" />
       </head>
-      {/*
-        bg-pitch sets --color-pitch (#0a1628) as the page background.
-        The body stretches full height and stacks header → main → footer.
-      */}
-      <body className="flex min-h-full flex-col overflow-x-hidden bg-pitch text-foreground">
+      <body className="flex min-h-full flex-col bg-pitch text-foreground">
+        <a className="skip-link" href="#main-content">Skip to content</a>
         {children}
       </body>
     </html>

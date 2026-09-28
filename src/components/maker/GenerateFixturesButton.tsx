@@ -1,5 +1,7 @@
 "use client"
 
+import { PendingSubmit } from "@/src/components/maker/PendingSubmit"
+
 import { useState } from "react"
 import { btnPrimarySm, btnSecondary, card } from "@/src/components/maker/styles"
 import { generateFixturesAction } from "@/src/server/matches/actions"
@@ -50,9 +52,9 @@ export function GenerateFixturesButton({
         <button type="button" onClick={() => setOpen(false)} className={btnSecondary}>
           Cancel
         </button>
-        <button type="submit" disabled={missing === 0} className={btnPrimarySm}>
+        <PendingSubmit pendingLabel="Generating fixtures…" disabled={missing === 0} className={btnPrimarySm}>
           {missing === 0 ? "Nothing to generate" : `Generate ${missing} fixtures`}
-        </button>
+        </PendingSubmit>
       </div>
     </form>
   )

@@ -12,6 +12,7 @@ export default function SignupPage() {
         </div>
         <div className={`${card} space-y-6 border-0 p-6`}>
           <h1 className="text-2xl font-semibold text-ink">Create an account</h1>
+          <p className="text-sm leading-6 text-text-muted">Create your organizer account and bring your competition to life.</p>
           <AuthForm mode="sign-up" />
         </div>
       </section>

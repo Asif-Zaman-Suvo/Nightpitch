@@ -9,7 +9,7 @@ export default function MakerLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <SiteHeader />
-      <main className="flex-1">{children}</main>
+      <main id="main-content" className="min-w-0 flex-1">{children}</main>
     </div>
   )
 }

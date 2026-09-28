@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom"
 import { btnSecondary } from "@/src/components/maker/styles"
 
 const confirmButton =
-  "inline-flex items-center justify-center rounded-md bg-danger px-3 py-1.5 text-sm font-semibold text-navy transition duration-150 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:cursor-not-allowed disabled:opacity-60"
+  "inline-flex items-center justify-center rounded-md bg-danger px-3 py-1.5 text-sm font-semibold text-white transition duration-150 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:cursor-not-allowed disabled:opacity-60"
 
 export function ConfirmSubmit({
   action,

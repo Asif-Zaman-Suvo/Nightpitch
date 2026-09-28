@@ -27,7 +27,7 @@ export default async function ManageSettingsPage({
   })
 
   return (
-    <div className="max-w-xl space-y-8">
+    <div className="max-w-3xl space-y-8">
       <PageHeading title="Tournament settings" hint="Name, description, and who can open this tournament." />
       <dl className={`${card} grid gap-4 p-4 text-sm sm:grid-cols-3`}>
         <div>
@@ -44,6 +44,7 @@ export default async function ManageSettingsPage({
           <dd className="mt-1"><VisibilityBadge visibility={tournament.visibility} /></dd>
         </div>
       </dl>
+      <section className={`${card} p-5 sm:p-6`}>
       <TournamentForm
         mode="update"
         publicId={tournament.publicId}
@@ -51,6 +52,9 @@ export default async function ManageSettingsPage({
         description={tournament.description}
         visibility={tournament.visibility}
       />
+      </section>
+      <section className={`${card} space-y-4 p-5 sm:p-6`}>
+      <h3 className="font-semibold">Publishing & sharing</h3>
       {tournament.status === "draft" || tournament.status === "published" ? (
         <PublishTournamentButton publicId={tournament.publicId} published={tournament.status === "published"} />
       ) : null}
@@ -59,7 +63,10 @@ export default async function ManageSettingsPage({
       ) : (
         <p className="text-sm text-text-muted">This tournament is not publicly accessible yet.</p>
       )}
-      <div className="border-t border-line pt-6">
+      </section>
+      <div className="rounded-xl border border-danger/25 bg-danger-soft/40 p-5">
+        <h3 className="font-semibold text-danger">Danger zone</h3>
+        <p className="mb-3 mt-2 text-sm text-text-muted">Deleting removes this tournament from your workspace and its public page.</p>
         {query.error === "delete-failed" ? (
           <p className="mb-3 text-sm text-danger" role="alert">
             This tournament could not be deleted. Nothing was removed.

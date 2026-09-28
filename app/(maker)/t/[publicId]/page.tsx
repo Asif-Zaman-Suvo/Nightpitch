@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { buildQualificationPreviews } from "@/src/server/stages/qualification-preview"
 import { acceptsGroups } from "@/src/domain/tournament/stage"
 import { formatPublicId, normalizePublicId } from "@/src/domain/tournament/public-id"
 import { PageFrame } from "@/src/components/maker/PageFrame"
@@ -58,9 +59,11 @@ export default async function PublicTournamentPage({
     findChampion(tournament.id),
   ])
 
+  const qualification = [...buildQualificationPreviews(tournament.id, stages, entries, matches).values()]
+  const qualifiedForGroup = (groupId: string) => qualification.flatMap((preview) => preview.ok ? preview.groups.filter((group) => group.sourceGroupId === groupId).flatMap((group) => group.rows.filter((row) => row.qualified).map((row) => row.teamId)) : [])
   const playable = matches.filter((match) => match.participants.length === 2)
-  const completed = playable.filter((match) => match.status === "completed")
-  const scheduled = playable.filter((match) => match.status === "scheduled")
+  const completed = playable.filter((match) => match.status === "completed").sort((a, b) => (b.startsAt ? Date.parse(b.startsAt) : 0) - (a.startsAt ? Date.parse(a.startsAt) : 0))
+  const scheduled = playable.filter((match) => match.status === "scheduled").sort((a, b) => (a.startsAt ? Date.parse(a.startsAt) : Infinity) - (b.startsAt ? Date.parse(b.startsAt) : Infinity))
   const cancelled = playable.filter((match) => match.status === "cancelled")
   const summary = [
     ["Teams", teams.length],
@@ -73,7 +76,7 @@ export default async function PublicTournamentPage({
   return (
     <PageFrame width="wide">
       <article className="space-y-8">
-        <header className="relative min-h-64 overflow-hidden rounded-xl sm:min-h-72">
+        <header className="dark-panel relative min-h-64 overflow-hidden rounded-xl sm:min-h-72">
           <PitchPhoto name="stripes" sizes="(min-width: 1024px) 64rem, 100vw" className="object-cover object-center" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/45 to-black/20" />
           <div className="relative space-y-3 px-5 py-8 sm:px-7 sm:py-10">
@@ -90,8 +93,10 @@ export default async function PublicTournamentPage({
           </div>
         </header>
 
+        <nav aria-label="Match center sections" className="public-nav">{["Matches", "Results", "Standings", "Stages", "Teams", ...(brackets.length ? ["Bracket"] : [])].map((label) => <a key={label} href={`#${label.toLowerCase()}`}>{label}</a>)}</nav>
+
         {champion ? (
-          <ChampionBanner name={champion.name} shortName={champion.shortName} logoUrl={champion.logoUrl} />
+          <ChampionBanner name={champion.name} shortName={champion.shortName} logoUrl={champion.logoUrl} finalScore={matches.find((match) => match.id === champion.finalMatchId)?.participants.map((side) => `${side.name} ${side.score}`).join(" – ")} />
         ) : null}
 
         <section className="space-y-3">
@@ -106,8 +111,12 @@ export default async function PublicTournamentPage({
           </dl>
         </section>
 
+        <MatchSection title="Upcoming" matches={scheduled} empty="No matches scheduled yet." />
+        <MatchSection title="Recent results" matches={completed} empty="No completed matches yet." />
+        {cancelled.length > 0 ? <MatchSection title="Cancelled" matches={cancelled} empty="" /> : null}
+
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">Stages</h2>
+          <h2 id="stages" className="scroll-mt-24 text-2xl font-semibold text-ink">Stages</h2>
           {stages.length === 0 ? (
             <EmptyState title="No stages configured">This tournament has not configured any stages yet.</EmptyState>
           ) : (
@@ -162,7 +171,7 @@ export default async function PublicTournamentPage({
 
         {brackets.length > 0 ? (
           <section className="space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">Bracket</h2>
+            <h2 id="bracket" className="scroll-mt-24 text-2xl font-semibold text-ink">Bracket</h2>
             {brackets.map((bracket) => {
               const stage = stages.find((item) => item.id === bracket.stageId)
               return (
@@ -179,12 +188,10 @@ export default async function PublicTournamentPage({
           </section>
         ) : null}
 
-        <MatchSection title="Upcoming" matches={scheduled} empty="No matches scheduled yet." />
-        <MatchSection title="Recent results" matches={completed} empty="No completed matches yet." />
-        {cancelled.length > 0 ? <MatchSection title="Cancelled" matches={cancelled} empty="" /> : null}
+
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">Standings</h2>
+          <h2 id="standings" className="scroll-mt-24 text-2xl font-semibold text-ink">Standings</h2>
           {completed.length === 0 || standings.every((stage) => stage.table.kind === "none") ? (
             <EmptyState title="Standings unavailable">
               {stages.length === 0
@@ -209,7 +216,7 @@ export default async function PublicTournamentPage({
                   {stage.table.groups.map((group) => (
                     <div key={group.groupId} className="space-y-2">
                       <h4 className="text-sm font-semibold text-ink">{group.groupName}</h4>
-                      <StandingsTable caption={`${group.groupName} standings`} rows={group.rows} />
+                      <StandingsTable caption={`${group.groupName} standings`} rows={group.rows} qualifiedTeamIds={qualifiedForGroup(group.groupId)} />
                     </div>
                   ))}
                 </div>
@@ -219,7 +226,7 @@ export default async function PublicTournamentPage({
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">Teams</h2>
+          <h2 id="teams" className="scroll-mt-24 text-2xl font-semibold text-ink">Teams</h2>
           {teams.length === 0 ? (
             <EmptyState title="No teams yet">Teams will appear here once the organizer adds them.</EmptyState>
           ) : (
@@ -253,16 +260,16 @@ function MatchSection({
   empty: string
 }) {
   return (
-    <section className="space-y-3">
+    <section id={title === "Upcoming" ? "matches" : title === "Recent results" ? "results" : "cancelled"} className="space-y-3">
       <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-lime">{title}</h2>
       {matches.length === 0 ? (
         <EmptyState title={title}>{empty}</EmptyState>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {matches.map((match) => {
             const [home, away] = match.participants
             return (
-              <li key={match.id}>
+              <li key={match.id} className="min-w-0">
                 <FixtureCard
                   status={match.status}
                   meta={[match.stageName, match.groupName].filter(Boolean).join(" · ")}

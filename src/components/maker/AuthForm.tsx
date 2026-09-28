@@ -27,7 +27,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
         Password
         <input name="password" type="password" required minLength={8} autoComplete={mode === "sign-in" ? "current-password" : "new-password"} className={field} />
       </label>
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state.error && <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}
       {state.message && <p className="text-sm text-text-muted">{state.message}</p>}
       <button type="submit" disabled={pending} className={btnPrimary}>
         {pending ? "Please wait" : mode === "sign-in" ? "Sign in" : "Create account"}

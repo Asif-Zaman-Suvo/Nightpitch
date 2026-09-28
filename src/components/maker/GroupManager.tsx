@@ -52,7 +52,7 @@ export function RenameGroupForm({ publicId, groupId, name }: { publicId: string;
       <button type="submit" disabled={pending} className={`${btnGhost} disabled:cursor-not-allowed disabled:opacity-60`}>
         {pending ? "Saving…" : "Rename"}
       </button>
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state.error && <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}
     </form>
   )
 }
@@ -111,7 +111,7 @@ export function MoveTeamForm({
 }) {
   if (groups.length === 0) return null
   return (
-    <form action={assignTeamAction} className="flex items-center gap-2">
+    <form action={assignTeamAction} className="flex min-w-0 flex-wrap items-center gap-2">
       <input type="hidden" name="publicId" value={publicId} />
       <input type="hidden" name="number" value={number} />
       <select name="groupId" aria-label="Move to group" className={control}>

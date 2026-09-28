@@ -12,6 +12,7 @@ export default function LoginPage() {
         </div>
         <div className={`${card} space-y-6 border-0 p-6`}>
           <h1 className="text-2xl font-semibold text-ink">Sign in</h1>
+          <p className="text-sm leading-6 text-text-muted">Welcome back. Your next match day starts here.</p>
           <AuthForm mode="sign-in" />
         </div>
       </section>

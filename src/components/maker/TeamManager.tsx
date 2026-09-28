@@ -22,7 +22,7 @@ export function AddTeamForm({ publicId }: { publicId: string }) {
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="publicId" value={publicId} />
       <TeamFields />
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state.error && <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}
       <button type="submit" disabled={pending} className={btnPrimary}>
         {pending ? "Creating…" : "Add team"}
       </button>
@@ -37,7 +37,7 @@ export function EditTeamForm({ publicId, team }: { publicId: string; team: Edita
       <input type="hidden" name="publicId" value={publicId} />
       <input type="hidden" name="number" value={team.number} />
       <TeamFields name={team.name} shortName={team.shortName} logoUrl={team.logoUrl ?? ""} />
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state.error && <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}
       <button type="submit" disabled={pending} className={btnSecondary}>
         {pending ? "Saving…" : "Save"}
       </button>

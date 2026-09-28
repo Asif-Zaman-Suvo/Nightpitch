@@ -1,5 +1,7 @@
 "use client"
 
+import { PendingSubmit } from "@/src/components/maker/PendingSubmit"
+
 import { useState } from "react"
 import { btnPrimarySm, btnSecondary, card } from "@/src/components/maker/styles"
 import { publishTournamentAction, unpublishTournamentAction } from "@/src/server/tournaments/actions"
@@ -29,9 +31,9 @@ export function PublishTournamentButton({ publicId, published }: { publicId: str
         <button type="button" onClick={() => setOpen(false)} className={btnSecondary}>
           Cancel
         </button>
-        <button type="submit" className={btnPrimarySm}>
+        <PendingSubmit pendingLabel={published ? "Unpublishing…" : "Publishing…"} className={btnPrimarySm}>
           {published ? "Unpublish" : "Publish"}
-        </button>
+        </PendingSubmit>
       </div>
     </form>
   )

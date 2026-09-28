@@ -1,3 +1,7 @@
+import { listStages } from "@/src/server/stages/repository"
+import { listMatches } from "@/src/server/matches/repository"
+import { listStageEntries } from "@/src/server/stage-entries/repository"
+import { buildQualificationPreviews } from "@/src/server/stages/qualification-preview"
 import { notFound } from "next/navigation"
 import { canManageStages } from "@/src/domain/tournament/stage"
 import { normalizePublicId } from "@/src/domain/tournament/public-id"
@@ -22,7 +26,9 @@ export default async function ManageStandingsPage({
   const { tournament, role } = await loadVisibleTournament(publicId, "update")
   if (!canManageStages({ role, status: tournament.status, deleted: tournament.deletedAt !== null })) notFound()
 
-  const standings = await listStageStandings(tournament.id)
+  const [standings, stages, entries, matches] = await Promise.all([listStageStandings(tournament.id), listStages(tournament.id), listStageEntries(tournament.id), listMatches(tournament.id)])
+  const qualification = [...buildQualificationPreviews(tournament.id, stages, entries, matches).values()]
+  const qualifiedForGroup = (groupId: string) => qualification.flatMap((preview) => preview.ok ? preview.groups.filter((group) => group.sourceGroupId === groupId).flatMap((group) => group.rows.filter((row) => row.qualified).map((row) => row.teamId)) : [])
   const selected = standings.find((stage) => stage.stageId === requestedStage) ?? standings[0]
   const groups = selected?.table.kind === "groups" ? selected.table.groups : []
   const selectedGroup = groups.find((group) => group.groupId === requestedGroup) ?? groups[0]
@@ -64,7 +70,7 @@ export default async function ManageStandingsPage({
               {selectedGroup.rows.every((row) => row.played === 0) && (
                 <p className="text-sm text-text-muted">No completed matches yet. Scheduled and cancelled matches are not included.</p>
               )}
-              <StandingsTable caption={`${selectedGroup.groupName} standings`} rows={selectedGroup.rows} />
+              <StandingsTable caption={`${selectedGroup.groupName} standings`} rows={selectedGroup.rows} qualifiedTeamIds={qualifiedForGroup(selectedGroup.groupId)} />
             </section>
           ) : (
             <p className="text-sm text-text-muted">Attach a group to this stage to see a table.</p>

@@ -103,7 +103,7 @@ export default async function ManageStagesPage({
                 && (source.stageType === "group" || source.groups.length === 1))
               .flatMap((source) => source.groups.map((group) => ({ id: group.id, name: `${source.name} · ${group.name}` })))
             return (
-            <li key={stage.id} className={`${card} space-y-4 border-l-4 p-4 ${stageAccent(stage.stageType)}`}>
+            <li id={`stage-${stage.position}`} key={stage.id} className={`${card} space-y-4 border-l-4 p-4 ${stageAccent(stage.stageType)}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Stage {stage.position}</p>
@@ -118,6 +118,7 @@ export default async function ManageStagesPage({
                   : ""}
                 {rules.enabled ? ` · Win ${rules.scoring.win} · Draw ${rules.scoring.draw} · Loss ${rules.scoring.loss}` : " · No standings table"}
               </p>
+              <details className="rounded-lg border border-line p-3"><summary className="font-semibold text-sm text-blue">Stage settings & rules</summary><div className="mt-3 space-y-4">
               <EditStageForm publicId={publicId} stageId={stage.id} name={stage.name} stageType={stage.stageType} />
               {acceptsGroups(stage.stageType) ? (
                 <ScoringRulesForm
@@ -138,6 +139,7 @@ export default async function ManageStagesPage({
                 sourceGroups={sourceGroups} preview={qualificationPreviews.get(stage.id) ?? null}
                 locked={tournament.status === "completed"} key={JSON.stringify(qualification.value)}
               />}
+              </div></details>
               <div className="flex flex-wrap gap-3">
                 <MoveStageButton publicId={publicId} stageId={stage.id} direction="up" />
                 <MoveStageButton publicId={publicId} stageId={stage.id} direction="down" />

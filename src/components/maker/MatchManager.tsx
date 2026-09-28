@@ -1,5 +1,7 @@
 "use client"
 
+import { PendingSubmit } from "@/src/components/maker/PendingSubmit"
+
 import { useMemo, useState } from "react"
 import { acceptsGroups, type StageType } from "@/src/domain/tournament/stage"
 import { ConfirmSubmit } from "@/src/components/maker/ConfirmSubmit"
@@ -101,9 +103,9 @@ export function CreateMatchForm({ publicId, stages }: { publicId: string; stages
         Date and time
         <input name="startsAt" type="datetime-local" className={field} />
       </label>
-      <button type="submit" className={`${btnPrimary} sm:col-span-2 sm:w-fit`}>
+      <PendingSubmit className={`${btnPrimary} sm:col-span-2 sm:w-fit`}>
         Create match
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -125,9 +127,9 @@ export function ResultForm({
       <input type="hidden" name="matchId" value={matchId} />
       <input name="score1" type="number" min={0} required aria-label="Score 1" defaultValue={score1 ?? ""} className={`${control} w-16`} />
       <input name="score2" type="number" min={0} required aria-label="Score 2" defaultValue={score2 ?? ""} className={`${control} w-16`} />
-      <button type="submit" className={btnGhost}>
+      <PendingSubmit className={btnGhost}>
         {score1 === null ? "Enter result" : "Edit result"}
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -158,9 +160,9 @@ export function ScheduleForm({
         Time
         <input name="time" type="time" defaultValue={time} className={`${control} mt-1 block`} />
       </label>
-      <button type="submit" className={btnGhost}>
+      <PendingSubmit className={btnGhost}>
         Save schedule
-      </button>
+      </PendingSubmit>
     </form>
   )
 }
@@ -189,9 +191,9 @@ export function MatchStatusButton({
     return (
       <form action={formAction}>
         {fields}
-        <button type="submit" className={btnGhost}>
+        <PendingSubmit className={btnGhost}>
           {label}
-        </button>
+        </PendingSubmit>
       </form>
     )
   }

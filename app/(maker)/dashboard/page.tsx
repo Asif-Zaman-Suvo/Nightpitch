@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 import { canOpenWithoutLogin } from "@/src/domain/tournament/search"
 import { formatPublicId } from "@/src/domain/tournament/public-id"
 import { PageFrame } from "@/src/components/maker/PageFrame"
-import { PitchPhoto } from "@/src/components/maker/PitchPhoto"
 import { btnSecondary, card } from "@/src/components/maker/styles"
 import { TournamentForm } from "@/src/components/maker/TournamentForm"
 import { EmptyState, ErrorNote, StatusBadge, VisibilityBadge } from "@/src/components/maker/visual"
@@ -20,19 +19,19 @@ export default async function DashboardPage() {
   } catch (error) {
     const message = error instanceof Error ? error.message : ""
     if (!message.includes("DATABASE_URL")) throw error
-    databaseError = "The tournament database is not connected. Add DATABASE_URL, apply the migrations, then restart the server."
+    databaseError = "Tournaments are temporarily unavailable. Please try again later."
   }
 
   return (
-    <PageFrame>
-    <div className="space-y-10">
+    <PageFrame width="wide">
+    <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className="space-y-4">
-        <div className="relative h-28 overflow-hidden rounded-xl sm:h-36">
-          <PitchPhoto name="cage" sizes="48rem" className="object-cover object-[center_30%]" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/75 to-black/25" />
-          <h1 className="absolute bottom-4 left-4 text-2xl font-semibold text-white">Your tournaments</h1>
+        <div className="dark-panel rounded-2xl p-6 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[.2em] text-emerald-200">Organizer workspace</p>
+          <h1 className="mt-3 text-3xl font-semibold">Your tournaments</h1>
+          <p className="mt-3 text-sm leading-6 text-white/70">From the first team to the final whistle. Build, manage, and share your competition.</p>
+          <p className="mt-6 font-mono text-sm text-emerald-200">{tournaments.length} competitions in your workspace</p>
         </div>
-        <p className="text-sm text-text-muted">Create and manage your own tournament.</p>
         {databaseError ? (
           <ErrorNote>{databaseError}</ErrorNote>
         ) : tournaments.length === 0 ? (
@@ -72,7 +71,7 @@ export default async function DashboardPage() {
         )}
       </section>
       {!databaseError && (
-        <section className={`${card} space-y-4 p-5`}>
+        <section id="create-tournament" className={`${card} space-y-4 p-5 sm:p-6`}>
           <h2 className="text-xl font-semibold text-ink">Create a tournament</h2>
           <TournamentForm mode="create" />
         </section>
